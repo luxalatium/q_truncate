@@ -26,24 +26,24 @@ using namespace QTR_NS;
 
 JobScatter3d::JobScatter3d(class QTR *q)
 {
-        qtr = q;
-        log = qtr->log;
-        parameters = qtr->parameters;
-        scat = new Scatter3d(qtr);
+    qtr = q;
+    log = qtr->log;
+    parameters = qtr->parameters;
+    scat = new Scatter3d(qtr);
 }
 /* ------------------------------------------------------------------------------- */
 
 JobScatter3d::~JobScatter3d()
 {
-        delete scat;
+    delete scat;
 }
 
 /* ------------------------------------------------------------------------------- */
 
 void JobScatter3d::run(class QTR *qtr)
-{       
-        scat->Evolve();
-        log->log("[Job_Scatter3d] Done! \n"); 
+{     
+    scat->Evolve();
+    log->log("[Job_Scatter3d] Done! \n"); 
 }
 /* ------------------------------------------------------------------------------- */
 

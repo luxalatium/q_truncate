@@ -20,20 +20,20 @@
 
 namespace QTR_NS  {
 
-        class JobImt2d: public Job      {
-                
-        public:
-                JobImt2d(class QTR *);
-                ~JobImt2d(void);
-                
-                void run(class QTR *);
-                
-        private:
-                
-                Log        *log;
-                Parameters *parameters;
-                QTR        *qtr;
-                Imt2d      *imt;
-        };
+    class JobImt2d: public Job    {
+        
+    public:
+        JobImt2d(class QTR *);
+        ~JobImt2d(void);
+        
+        void run(class QTR *);
+        
+    private:
+        
+        Log        *log;
+        Parameters *parameters;
+        QTR        *qtr;
+        Imt2d      *imt;
+    };
 }
 #endif /* QTR_JOB_IMT2D_H */

@@ -26,29 +26,29 @@
 using std::string;
 
 namespace QTR_NS   {
+    
+    class Error : protected Pointers   {
         
-        class Error : protected Pointers   {
-                
-        public:
-                
-                Error(class QTR *);
-                ~Error();
-                
-                void abort_all();
-                
+    public:
+        
+        Error(class QTR *);
+        ~Error();
+        
+        void abort_all();
+        
 # ifdef QTRMPI
-                long         i;
-                int          me;
-                int          nprocs;
+        long     i;
+        int      me;
+        int      nprocs;
 # endif
-                
-        private:
-                
-                Log  *log;
-                
-                char Error_1;
-        };
         
+    private:
+        
+        Log  *log;
+        
+        char Error_1;
+    };
+    
 }
 
 #endif /* QTR_ERROR_H */

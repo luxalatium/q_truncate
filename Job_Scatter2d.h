@@ -1,39 +1,39 @@
 // ==============================================================================
 //
-//  Job_Scatter4d.h
+//  Job_Scatter2d.h
 //  QTR
 //
-//  Created by Albert Lu on 9/10/18.
+//  Created by Albert Lu on 10/27/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 9/10/18
+//  Last modified on 10/27/18
 //
 //  Note:
 //
 // ==============================================================================
 
-#ifndef QTR_JOB_SCATTER4D_H
-#define QTR_JOB_SCATTER4D_H
+#ifndef QTR_JOB_SCATTER2D_H
+#define QTR_JOB_SCATTER2D_H
 
 #include "Job.h"
-#include "Scatter4d.h"
+#include "Scatter2d.h"
 
 namespace QTR_NS  {
 
-    class JobScatter4d: public Job    {
+    class JobScatter2d: public Job    {
         
     public:
-        JobScatter4d(class QTR *);
-        ~JobScatter4d(void);
+        JobScatter2d(class QTR *);
+        ~JobScatter2d(void);
         
         void run(class QTR *);
         
     private:
         
-        Log    *log;
+        Log        *log;
         Parameters *parameters;
-        QTR    *qtr;
-        Scatter4d  *scat;
+        QTR        *qtr;
+        Scatter2d  *scat;
     };
 }
-#endif /* QTR_JOB_SCATTER4D_H */
+#endif /* QTR_JOB_SCATTER2D_H */

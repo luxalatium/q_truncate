@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 9/9/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/26/18
+//  Last modified on 10/27/18
 //
 //  Note:
 //
@@ -340,13 +340,12 @@ void Scatter4d::Evolve()
 
                 for (unsigned int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
                 
-		    norm += std::abs(F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]));
+		            norm += std::abs(F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]));
                 }
             }
         }
     }
     norm *= H[0] * H[1] * H[2] * H[3];
-
     log->log("[Scatter4d] Normalization factor = %e\n",norm);
     norm = 1.0 / sqrt(norm);
 
@@ -437,7 +436,7 @@ void Scatter4d::Evolve()
 
         // `````````````````````````````````````````````````````````````````
         
-	#pragma omp parallel for reduction(merge: tmpVec) private(b1, b2, b3, b4, b5)
+	    #pragma omp parallel for reduction(merge: tmpVec) private(b1, b2, b3, b4, b5)
         for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
             for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
@@ -460,9 +459,8 @@ void Scatter4d::Evolve()
                 }
             }
         }
-	tmpVec.swap(TA);
+	    tmpVec.swap(TA);
         tmpVec.clear();
-
         log->log("[Scatter4d] TA size = %d\n", TA.size());
 
         // `````````````````````````````````````````````````````````````````
@@ -572,7 +570,7 @@ void Scatter4d::Evolve()
 
     for (int tt = 0; tt < (int)(TIME / kk); tt ++)
     {
-	t_0_begin = omp_get_wtime();
+	    t_0_begin = omp_get_wtime();
         t_1_begin = omp_get_wtime();
 
     	#pragma omp parallel for
@@ -593,7 +591,7 @@ void Scatter4d::Evolve()
             	}
             }
     	}
-	t_1_end = omp_get_wtime();
+	    t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
         log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
 
@@ -628,11 +626,11 @@ void Scatter4d::Evolve()
                     tmpVec.push_back(TB[i]);
                 }
             }
-	    tmpVec.swap(TBL);
+	        tmpVec.swap(TBL);
             tmpVec.clear();
             TBL_P = TBL;
 
-	    t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
             log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
         }    
@@ -721,7 +719,7 @@ void Scatter4d::Evolve()
             it = std::unique (ExFF.begin(), ExFF.end()); 
             ExFF.resize(std::distance(ExFF.begin(),it));
 
-	    t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
             log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
 
@@ -731,7 +729,7 @@ void Scatter4d::Evolve()
 
             t_1_begin = omp_get_wtime();
             ExTBL.clear();
-	    it = ExFF.begin();
+	        it = ExFF.begin();
             
             while ( it != ExFF.end() )  {
 
@@ -748,10 +746,10 @@ void Scatter4d::Evolve()
 
                 if ( F[g1 - 1][g2][g3][g4] != xZERO )  {
 
-		    if ( std::abs(F[g1 - 1][g2][g3][g4]) < val_min_abs &&  F[g1 - 2][g2][g3][g4] != xZERO )  {
+		            if ( std::abs(F[g1 - 1][g2][g3][g4]) < val_min_abs &&  F[g1 - 2][g2][g3][g4] != xZERO )  {
                     	val_min_abs = std::abs(F[g1 - 1][g2][g3][g4]);
                     	val_min = F[g1 - 1][g2][g3][g4];
-		    }
+		            }
 
                     if (F[g1 - 2][g2][g3][g4] != xZERO)  {
 
@@ -930,7 +928,7 @@ void Scatter4d::Evolve()
 
                         ExTBL.push_back( std::complex<double> (std::real(sum) / count, std::imag(sum) / count) );
                     }
-		    ++it;
+		            ++it;
                 }
             }
 
@@ -943,7 +941,7 @@ void Scatter4d::Evolve()
                 g4 = ExFF[i] % M3;
                 F[g1][g2][g3][g4] = ExTBL[i];
             }
-	    t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
             log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
 
@@ -982,7 +980,7 @@ void Scatter4d::Evolve()
             it = std::unique (TA.begin(), TA.end()); 
             TA.resize(std::distance(TA.begin(),it));
 
-	    t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
             log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
      
@@ -1118,7 +1116,7 @@ void Scatter4d::Evolve()
                 PFdX3[g1][g2][g3][g4] = 0.5 * Hi[2] * std::abs( FF[g1][g2][g3 + 1][g4] - FF[g1][g2][g3 - 1][g4]);
                 PFdX4[g1][g2][g3][g4] = 0.5 * Hi[3] * std::abs( FF[g1][g2][g3][g4 + 1] - FF[g1][g2][g3][g4 - 1]);
             
-	    }
+	        }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
             log->log("Elapsed time (omp-kk-6: CASE 1 PF) = %lf sec\n", t_1_elapsed);
@@ -1466,7 +1464,7 @@ void Scatter4d::Evolve()
         // ff(t+1) Normailzed & go on
         norm = 0.0;
 
-	if (!isFullGrid)  {
+	    if (!isFullGrid)  {
 
             #pragma omp parallel for private(grid, g1, g2, g3, g4) reduction (+:norm)
             for (int i = 0; i < TA.size(); i++)  {
@@ -1477,9 +1475,9 @@ void Scatter4d::Evolve()
                 g4 = TA[i] % M3;
             	norm += std::abs(FF[g1][g2][g3][g4] * std::conj(FF[g1][g2][g3][g4]));
             }
-	}  else  {
+	    }  else  {
 
-	    #pragma omp parallel for private(grid) reduction (+:norm)
+	        #pragma omp parallel for private(grid) reduction (+:norm)
             for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
             	for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
@@ -1488,12 +1486,12 @@ void Scatter4d::Evolve()
 
                         for (int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
 
-                	    norm += std::abs(FF[i1][i2][i3][i4] * std::conj(FF[i1][i2][i3][i4]));
+                	        norm += std::abs(FF[i1][i2][i3][i4] * std::conj(FF[i1][i2][i3][i4]));
                         }
-		    }
-		}
+		            }
+		        }
+	        }
 	    }
-	}
         norm *= H[0] * H[1] * H[2] * H[3];
         norm = 1.0 / sqrt(norm);
 
@@ -1513,7 +1511,7 @@ void Scatter4d::Evolve()
                 }
             }
         }     
-	t_1_end = omp_get_wtime();
+	    t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
         log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
 
@@ -1648,28 +1646,28 @@ void Scatter4d::Evolve()
                 g3 = (TA[i] % M2) / M3;
                 g4 = TA[i] % M3;
 
-		if (g1 + 1 != BoxShape[0] - 1)
+		        if (g1 + 1 != BoxShape[0] - 1)
                     tmpVec.push_back(GridToIdx(g1 + 1, g2, g3, g4 ));
 
-		if (g1 - 1 != 0)
+		        if (g1 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1 - 1, g2, g3, g4 ));
 
-		if (g2 + 1 != BoxShape[1] - 1)
+		        if (g2 + 1 != BoxShape[1] - 1)
                     tmpVec.push_back(GridToIdx(g1, g2 + 1, g3, g4 ));
 
-		if (g2 - 1 != 0)
+		        if (g2 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1, g2 - 1, g3, g4 ));
 
-		if (g3 + 1 != BoxShape[2] - 1)
+		        if (g3 + 1 != BoxShape[2] - 1)
                     tmpVec.push_back(GridToIdx(g1, g2, g3 + 1, g4 ));
 
-		if (g3 - 1 != 0)
+		        if (g3 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1, g2, g3 - 1, g4 )); 
 
-		if (g4 + 1 != BoxShape[3] - 1)
+		        if (g4 + 1 != BoxShape[3] - 1)
                     tmpVec.push_back(GridToIdx(g1, g2, g3, g4 + 1 ));
 
-		if (g4 - 1 != 0)
+		        if (g4 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1, g2, g3, g4 - 1 ));            
             }
             t_1_end = omp_get_wtime();
@@ -1709,7 +1707,7 @@ void Scatter4d::Evolve()
             log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
             
-	    #pragma omp parallel for
+	        #pragma omp parallel for
             for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
 
                 for (int i2 = 1; i2 < BoxShape[1]  - 1; i2 ++)  {
@@ -1718,7 +1716,7 @@ void Scatter4d::Evolve()
 
                         for (int i4 = 1; i4 < BoxShape[3] - 1 ; i4 ++)  {
 
-			    PF[i1][i2][i3][i4] = std::abs( F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]) );
+			                PF[i1][i2][i3][i4] = std::abs( F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]));
                         }
                     }
                 }
@@ -1732,7 +1730,7 @@ void Scatter4d::Evolve()
             // ----------------------------------------------------------------------------
 			// Compute Transmittance
             // ----------------------------------------------------------------------------
-            t_1_begin = omp_get_wtime();
+            /*t_1_begin = omp_get_wtime();
             pftrans = 0.0;
 
             #pragma omp parallel for reduction (+:pftrans)
@@ -1752,7 +1750,7 @@ void Scatter4d::Evolve()
             pftrans *= H[0] * H[1] * H[2] * H[3];
             PF_trans.push_back(pftrans);
             t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
+            t_1_elapsed = t_1_end - t_1_begin;*/
             //log->log("Elapsed time (omp-e-2 trans) = %lf sec\n", t_1_elapsed); 
 
             // ----------------------------------------------------------------------------
@@ -1761,7 +1759,8 @@ void Scatter4d::Evolve()
 
             norm = 0.0;
 
-	    #pragma omp parallel for reduction (+:norm)
+            t_1_begin = omp_get_wtime();
+	        #pragma omp parallel for reduction (+:norm)
             for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
             	for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
@@ -1770,30 +1769,31 @@ void Scatter4d::Evolve()
 
                         for (int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
 
-                	    norm += std::abs(FF[i1][i2][i3][i4] * std::conj(FF[i1][i2][i3][i4]));
+                	        norm += std::real(F0_STAR[i1][i2][i3][i4] * FF[i1][i2][i3][i4]);
                         }
-		    }
-		}
-	    }
+		            }
+		        }
+	        }
             norm *= H[0] * H[1] * H[2] * H[3];
+            log->log("[Scatter4d] Step: %d, Time = %f ACF = %.16e \n", tt + 1, kk * (tt + 1), norm);
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            //log->log("Elapsed time (omp-e-2 acf) = %lf sec\n", t_1_elapsed); 
 
-            log->log("[Scatter4d] Step: %d, ACF = %.16e \n", tt + 1, norm);
-
-             // ----------------------------------------------------------------------------
+            // ----------------------------------------------------------------------------
              
             t_0_end = omp_get_wtime();
             t_0_elapsed = t_0_end - t_0_begin;
  
             log->log("[Scatter4d] Step: %d, Elapsed time: %lf sec\n", tt + 1, t_0_elapsed);
 
-	    if (!isFullGrid)  {
+	        if (!isFullGrid)  {
 
                 log->log("[Scatter4d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
             	log->log("[Scatter4d] TA / total grids = %lf\n", ( TA.size() * 1.0 ) / GRIDS_TOT);
-	    }
+	        }
             log->log("\n........................................................\n\n");
         }           
-
     } // Time iteration 
 
     log->log("[Scatter4d] Evolve done.\n");

@@ -19,16 +19,16 @@
 
 namespace QTR_NS  {
 
-        class JobTest: public Job      {
-                
-        public:
-                JobTest(class QTR *);
-                ~JobTest(void);
-                
-                void run(class QTR *);   
-        private:
-                Log        *log;
-                Parameters *parameters;
-        };
+    class JobTest: public Job    {
+        
+    public:
+        JobTest(class QTR *);
+        ~JobTest(void);
+        
+        void run(class QTR *);   
+    private:
+        Log    *log;
+        Parameters *parameters;
+    };
 }
 #endif /* QTR_JOB_TEST_H */

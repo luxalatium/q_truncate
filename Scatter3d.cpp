@@ -1,18 +1,18 @@
 // ==============================================================================
 //
-//  Scatter3D.cpp
+//  Scatter3d.cpp
 //  QTR
 //
 //  Created by Albert Lu on 8/6/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 9/10/18
+//  Last modified on 10/27/18
 //
 //  Note:
 //
 // ==============================================================================
 
-//#define BOOST_DISABLE_ASSERTS
+#define BOOST_DISABLE_ASSERTS
 
 #include <algorithm>
 #include <cmath>
@@ -22,6 +22,7 @@
 #include <parallel/algorithm>
 #include <vector>
 
+#include "Constants.h"
 #include "Containers.h"
 #include "Error.h"
 #include "Log.h"
@@ -44,7 +45,7 @@ Scatter3d::Scatter3d(class QTR *q)
     log = qtr->log;
     parameters = qtr->parameters;
     init();
-}
+} 
 /* ------------------------------------------------------------------------------- */
 
 Scatter3d::~Scatter3d()
@@ -58,7 +59,8 @@ void Scatter3d::init()
     log->log("\n\n[Scatter3d] INIT starts ...\n");
 
     // General parameters
-    I = {0,1}; // sqrt(-1)
+    I = {0,1};         // sqrt(-1)
+    PI_INV = 1.0 / PI; // 1/PI
     xZERO = {0,0}; // complex zero
     DIMENSIONS = parameters->scxd_dimensions;
     PERIOD = parameters->scxd_period;
@@ -68,45 +70,59 @@ void Scatter3d::init()
     H.resize(DIMENSIONS);
     Hi.resize(DIMENSIONS);
     Hisq.resize(DIMENSIONS);
+    S.resize(DIMENSIONS);  
+    kk = parameters->scxd_k;
+
     H[0] = parameters->scxd_h1;
     H[1] = parameters->scxd_h2;
     H[2] = parameters->scxd_h3;
-    Hi[0] = 1 / H[0];
-    Hi[1] = 1 / H[1];    
-    Hi[2] = 1 / H[2];  
-    Hisq[0] = 1 / pow(H[0],2);
-    Hisq[1] = 1 / pow(H[1],2);    
-    Hisq[2] = 1 / pow(H[2],2);  
 
-    S.resize(DIMENSIONS);  
-    kk = parameters->scxd_k;
-    S << kk * Hisq[0], kk * Hisq[1], kk * Hisq[2]; 
+    for (unsigned int i = 0; i < DIMENSIONS; i ++)  {
+
+        Hi[i] = 1 / H[i];
+        Hisq[i] = 1 / pow(H[i],2);
+        S[i] = kk * Hisq[i];
+    }
 
     // Domain size and # grids
+
     Box.resize(DIMENSIONS * 2);
+
     Box[0] = parameters->scxd_xi1;
     Box[1] = parameters->scxd_xf1;
     Box[2] = parameters->scxd_xi2;
     Box[3] = parameters->scxd_xf2; 
     Box[4] = parameters->scxd_xi3;
-    Box[5] = parameters->scxd_xf3;    
+    Box[5] = parameters->scxd_xf3;  
 
     BoxShape.resize(DIMENSIONS);
-    BoxShape[0] = (int)( (Box[1] - Box[0]) / H[0] ) + 1;
-    BoxShape[1] = (int)( (Box[3] - Box[2]) / H[1] ) + 1;
-    BoxShape[2] = (int)( (Box[5] - Box[4]) / H[2] ) + 1;
-	GRIDS_TOT = BoxShape[0] * BoxShape[1] * BoxShape[2];
+    GRIDS_TOT = 1;
 
-    log->log("[Scatter3d] Number of grids = (%d,%d,%d)\n", BoxShape[0], BoxShape[1], BoxShape[2]);
+    log->log("[Scatter3d] Number of grids = (");
+
+    for (unsigned int i = 0; i < DIMENSIONS; i ++)  {
+
+        BoxShape[i] = (int)( (Box[2 * i + 1] - Box[2 * i]) / H[i] ) + 1;
+        GRIDS_TOT *= BoxShape[i];
+
+        if (i < DIMENSIONS - 1)
+            log->log("%d, ", BoxShape[i]);
+        else
+            log->log("%d)\n", BoxShape[i]);
+    }
 
     idx_x0 = (int) ( ( 0 - Box[0] ) / H[0] );
-	log->log("[Scatter3d] x = 0 at idx = %d\n", idx_x0);
+    M1 = BoxShape[1] * BoxShape[2];
+    M2 = BoxShape[2];
+    log->log("[Scatter3d] x = 0 at idx = %d\n", idx_x0);
 
     // Potential: form
+
     Vmode.resize(DIMENSIONS);
     Vmode[0] = parameters->scxd_Vmode_1;
     Vmode[1] = parameters->scxd_Vmode_2;
     Vmode[2] = parameters->scxd_Vmode_3;
+
     hb = parameters->scxd_hb;
     m  = parameters->scxd_m;
 
@@ -134,6 +150,9 @@ void Scatter3d::init()
     Ld = sqrt(2 * m * De) / (Da * hb);  
     log->log("[Scatter3d] Ld = %lf\n", Ld);
 
+    // Potential: Henon-Heiles
+    lambda = parameters->scxd_lambda;
+
     // Wavefunction parameters
     Wave0.resize(DIMENSIONS);
     Wave0[0] = parameters->scxd_x01;
@@ -152,10 +171,11 @@ void Scatter3d::init()
     // Ｏverride
     P[0] = sqrt(2.0 * m * Ek0);
     P[1] = 0;
-    P[2] = 0;                  
+    P[2] = 0;                   
     log->log("[Scatter3d] P[0] = %lf\n", P[0]);
 
     // Truncate parameters
+
     isFullGrid = parameters->scxd_isFullGrid;
     TolH = parameters->scxd_TolH;       // Tolerance of probability density for Zero point Cutoff
     TolL = parameters->scxd_TolL;       // Tolerance of probability density for Edge point
@@ -169,7 +189,7 @@ void Scatter3d::init()
 
 void Scatter3d::Evolve()
 {
-	#pragma omp declare reduction (merge : MeshIndex : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
+    #pragma omp declare reduction (merge : MeshIndex : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
 
     log->log("[Scatter3d] Evolve starts ...\n");
 
@@ -178,7 +198,7 @@ void Scatter3d::Evolve()
     bool    b1, b2, b3, b4, b5, b6;
     double  kh2m = kk * hb / 2 / m;
     double  k2hb = kk / hb;
-    double  coeff;
+    double  coeff1, coeff2, coeff3;
     double  pftrans;
     double  t_0_begin, t_0_end, t_0_elapsed;
     double  t_1_begin, t_1_end, t_1_elapsed;
@@ -188,9 +208,9 @@ void Scatter3d::Evolve()
     double  norm;
  
     // 3d Grid vector and indices
-    Vector3i  grid;
-    int     gx, gy, gz;
-    double  xx, yy, zz;
+    VectorXi  grid;
+    int     g1, g2, g3;
+    double  xx1, xx2, xx3;
 
     // Vector iterater
     std::vector<int>::iterator it;
@@ -215,20 +235,23 @@ void Scatter3d::Evolve()
     t_1_begin = omp_get_wtime();
 
     // Initialize containers
+    MeshCX3D F0_STAR(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    F0_STAR.reindex(0);
+
     MeshCX3D F(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     F.reindex(0);
 
     MeshD3D PF(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     PF.reindex(0);
     
-    MeshD3D PFdX(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    PFdX.reindex(0);  
+    MeshD3D PFdX1(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    PFdX1.reindex(0);  
 
-    MeshD3D PFdY(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    PFdY.reindex(0);
+    MeshD3D PFdX2(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    PFdX2.reindex(0);
 
-    MeshD3D PFdZ(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    PFdZ.reindex(0); 
+    MeshD3D PFdX3(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    PFdX3.reindex(0); 
 
     MeshCX3D FF(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     FF.reindex(0);   
@@ -240,24 +263,24 @@ void Scatter3d::Evolve()
     KK2.reindex(0);  
 
     MeshCX3D KK3(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    KK3.reindex(0);
+    KK3.reindex(0); 
 
     MeshCX3D KK4(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    KK4.reindex(0);   
+    KK4.reindex(0);
 
     #pragma omp parallel for
+    for (unsigned int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
-    for (int i = 0; i < BoxShape[0]; i ++)  {
+        for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
 
-        for (int j = 0; j < BoxShape[1]; j ++)  {
+            for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
-            for (int k = 0; k < BoxShape[2]; k++)  {
-        
-                F[i][j][k] = xZERO;
-                PF[i][j][k] = 0.0;
-                PFdX[i][j][k] = 0.0;
-                PFdY[i][j][k] = 0.0;
-                PFdZ[i][j][k] = 0.0;
+                F[i1][i2][i3] = xZERO;
+                F0_STAR[i1][i2][i3] = xZERO;
+                PF[i1][i2][i3] = 0.0;
+                PFdX1[i1][i2][i3] = 0.0;
+                PFdX2[i1][i2][i3] = 0.0;
+                PFdX3[i1][i2][i3] = 0.0;
             }
         }
     }
@@ -274,14 +297,13 @@ void Scatter3d::Evolve()
     // Initialize wavefunction
 
     #pragma omp parallel for
+    for (unsigned int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
 
-    for (int i = 1; i < BoxShape[0] - 1 ; i ++)  {
+        for (unsigned int i2 = 1; i2 < BoxShape[1] - 1 ; i2 ++)  {
 
-        for (int j = 1; j < BoxShape[1] - 1 ; j ++)  {
-
-            for (int k = 1; k < BoxShape[2] - 1 ; k++)  {
+            for (unsigned int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
           
-                F[i][j][k] = Wavefunction(Box[0] + i * H[0], Box[2] + j * H[1], Box[4] + k * H[2]);
+                F[i1][i2][i3] = Wavefunction_HH(Box[0] + i1 * H[0], Box[2] + i2 * H[1], Box[4] + i3 * H[2]);
             }
         }
     }
@@ -291,49 +313,33 @@ void Scatter3d::Evolve()
     norm = 0.0;
 
     #pragma omp parallel for reduction (+:norm)
+    for (unsigned int i1 = 0; i1 <  BoxShape[0]; i1 ++)  {
 
-    for (int i = 0; i <  BoxShape[0]; i++)  {
+        for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
 
-        for (int j = 0; j < BoxShape[1]; j++)  {
-
-            for (int k = 0; k < BoxShape[2]; k++)  {
+            for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
                 
-				norm += std::abs(F[i][j][k] * std::conj(F[i][j][k]));
+		        norm += std::abs(F[i1][i2][i3] * std::conj(F[i1][i2][i3]));
             }
         }
     }
     norm *= H[0] * H[1] * H[2];
-
     log->log("[Scatter3d] Normalization factor = %e\n",norm);
     norm = 1.0 / sqrt(norm);
 
     #pragma omp parallel for
+    for (unsigned int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
-    for (int i = 0; i < BoxShape[0]; i ++)  {
+        for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
 
-        for (int j = 0; j < BoxShape[1]; j ++)  {
+            for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
-            for (int k = 0; k < BoxShape[2]; k++)  {
-
-                F[i][j][k] = norm * F[i][j][k];
+                F[i1][i2][i3] = norm * F[i1][i2][i3];
+                F0_STAR[i1][i2][i3] = std::conj(F[i1][i2][i3]);
+                PF[i1][i2][i3] = std::abs(F[i1][i2][i3] * std::conj(F[i1][i2][i3]));
             }
         }
     }     
-
-    // Initial probability
-
-    #pragma omp parallel for
-
-    for (int i = 0; i < BoxShape[0]; i ++)  {
-
-        for (int j = 0; j < BoxShape[1]; j ++)  {
-
-            for (int k = 0; k < BoxShape[2]; k++)  {
-
-                PF[i][j][k] = std::abs(F[i][j][k] * std::conj(F[i][j][k]));
-            }
-        }
-    }
     t_1_end = omp_get_wtime();
     t_1_elapsed = t_1_end - t_1_begin;
     log->log("[Scatter3d] Elapsed time (initializing wavefunction) = %lf sec\n\n", t_1_elapsed); 
@@ -345,58 +351,23 @@ void Scatter3d::Evolve()
     t_1_begin = omp_get_wtime();
 
     // Pf 1st-order finite difference 
-
-    // PFdX
-
-    coeff = 1.0 / (2.0 * H[0]);
+    coeff1 = 1.0 / (2.0 * H[0]);
+    coeff2 = 1.0 / (2.0 * H[1]);
+    coeff3 = 1.0 / (2.0 * H[2]);
 
     #pragma omp parallel for
+    for (unsigned int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-    for (int i = 1; i < BoxShape[0] - 1; i ++)  {
+        for (unsigned int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-        for (int j = 1; j < BoxShape[1] - 1; j ++)  {
+            for (unsigned int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-            for (int k = 1; k < BoxShape[2] - 1; k++)  {
-
-                PFdX[i][j][k] = std::abs(F[i+1][j][k] - F[i-1][j][k]) * coeff;
+                    PFdX1[i1][i2][i3] = std::abs(F[i1+1][i2][i3] - F[i1-1][i2][i3]) * coeff1;
+                    PFdX2[i1][i2][i3] = std::abs(F[i1][i2+1][i3] - F[i1][i2-1][i3]) * coeff2;
+                    PFdX3[i1][i2][i3] = std::abs(F[i1][i2][i3+1] - F[i1][i2][i3-1]) * coeff3;
             }
         }
     }    
-
-    // PFdY    
-
-    coeff = 1.0 / (2.0 * H[1]);
-
-    #pragma omp parallel for
-
-    for (int i = 1; i < BoxShape[0] - 1; i ++)  {
-
-        for (int j = 1; j < BoxShape[1] - 1; j ++)  {
-
-            for (int k = 1; k < BoxShape[2] - 1; k++)  {
-
-                PFdY[i][j][k] = std::abs(F[i][j+1][k] - F[i][j-1][k]) * coeff;
-            }
-        }
-    }  
-
-    // PFdZ    
-
-    coeff = 1.0 / (2.0 * H[2]);
-
-    #pragma omp parallel for
-
-    for (int i = 1; i < BoxShape[0] - 1; i ++)  {
-
-        for (int j = 1; j < BoxShape[1] - 1; j ++)  {
-
-            for (int k = 1; k < BoxShape[2] - 1; k++)  {
-
-                PFdZ[i][j][k] = std::abs(F[i][j][k+1] - F[i][j][k-1]) * coeff;
-            }
-        }
-    }  
-
     t_1_end = omp_get_wtime();
     t_1_elapsed = t_1_end - t_1_begin;
     log->log("[Scatter3d] Elapsed time (finite differences) = %lf sec\n\n", t_1_elapsed); 
@@ -409,70 +380,76 @@ void Scatter3d::Evolve()
 
     t_1_begin = omp_get_wtime();
 
-	if ( !isFullGrid )  // Truncate method
+    if ( !isFullGrid )  // Truncate method
     {
-        #pragma omp parallel for
+        #pragma omp parallel for private(b1, b2, b3, b4)
+        for (unsigned int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-        for (int i = 1; i < BoxShape[0] - 1; i++)  {
+            for (unsigned int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-            for (int j = 1; j < BoxShape[1] - 1; j++)  {
+                for (unsigned int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                for (int k = 1; k < BoxShape[2] - 1; k++)  {
-          
-                    if ( ( PF[i][j][k] < TolH ) && ( PFdX[i][j][k] < TolHd ) && ( PFdY[i][j][k] < TolHd ) && ( PFdZ[i][j][k] < TolHd ) )
-                        F[i][j][k] = xZERO;
+                    b1 = PF[i1][i2][i3] < TolH;
+                    b2 = PFdX1[i1][i2][i3] < TolHd;
+                    b3 = PFdX2[i1][i2][i3] < TolHd;
+                    b4 = PFdX3[i1][i2][i3] < TolHd;
+        
+                    if ( b1 && b2 && b3 && b4 )
+                        F[i1][i2][i3] = xZERO;
                 }
             }
         }
 
         // `````````````````````````````````````````````````````````````````
         
-		#pragma omp parallel for reduction(merge: tmpVec)
+	    #pragma omp parallel for reduction(merge: tmpVec) private(b1, b2, b3, b4)
+        for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-        for (int i = 1; i < BoxShape[0] - 1; i++)  {
+            for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-            for (int j = 1; j < BoxShape[1] - 1; j++)  {
+                for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                for (int k = 1; k < BoxShape[2] - 1; k++)  {
-          
-                    if ( F[i][j][k] != std::complex<double>(0,0) || ( PFdX[i][j][k] >= TolHd || PFdY[i][j][k] >= TolHd || PFdZ[i][j][k] >= TolHd ))  {
+                    b1 = F[i1][i2][i3] != std::complex<double>(0,0);
+                    b2 = PFdX1[i1][i2][i3] >= TolHd;
+                    b3 = PFdX2[i1][i2][i3] >= TolHd;
+                    b4 = PFdX3[i1][i2][i3] >= TolHd;
+            
+                    if ( b1 || ( b2 || b3 || b4 ))  {
 
-                        tmpVec.push_back(GridToIdx(i,j,k));                                   
+                        tmpVec.push_back(GridToIdx(i1,i2,i3));                                   
                     }
                 }
             }
         }
-		tmpVec.swap(TA);
+	    tmpVec.swap(TA);
         tmpVec.clear();
 
         log->log("[Scatter3d] TA size = %d\n", TA.size());
 
         // `````````````````````````````````````````````````````````````````
 
-        #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz, b1, b2, b3, b4, b5, b6)
-
+        #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
         for (int i = 0; i < TA.size(); i++)
         {
-            grid = IdxToGrid(TA[i]);
-            gx = grid[0];
-            gy = grid[1];
-            gz = grid[2];
+            g3 = TA[i] % M2;
+            g2 = (TA[i] % M1) / M2;
+            g1 = TA[i] / M1;
 
-            b1 = F[ gx - 1 ][ gy  ][ gz   ] == xZERO;
-            b2 = F[ gx + 1 ][ gy  ][ gz   ] == xZERO;
-            b3 = F[ gx   ][ gy -1 ][ gz   ] == xZERO;
-            b4 = F[ gx   ][ gy +1 ][ gz   ] == xZERO;
-            b5 = F[ gx   ][ gy  ][ gz - 1 ] == xZERO;
-            b6 = F[ gx   ][ gy  ][ gz + 1 ] == xZERO;
+            b1 = F[ g1 - 1 ][ g2  ][ g3   ] == xZERO;
+            b2 = F[ g1 + 1 ][ g2  ][ g3   ] == xZERO;
+            b3 = F[ g1   ][ g2 -1 ][ g3   ] == xZERO;
+            b4 = F[ g1   ][ g2 +1 ][ g3   ] == xZERO;
+            b5 = F[ g1   ][ g2  ][ g3 - 1 ] == xZERO;
+            b6 = F[ g1   ][ g2  ][ g3 + 1 ] == xZERO;
                
             if ( b1 || b2 || b3 || b4 || b5 || b6 )
             {
-                b1 = ( PFdX[ gx - 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdY[ gx - 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdZ[ gx - 1 ][ gy   ][ gz   ] < TolHd );
-                b2 = ( PFdX[ gx + 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdY[ gx + 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdZ[ gx + 1 ][ gy   ][ gz   ] < TolHd );
-                b3 = ( PFdX[ gx   ][ gy - 1 ][ gz   ] < TolHd ) && ( PFdY[ gx   ][ gy - 1 ][ gz   ] < TolHd ) && ( PFdZ[ gx   ][ gy - 1 ][ gz   ] < TolHd );
-                b4 = ( PFdX[ gx   ][ gy + 1 ][ gz   ] < TolHd ) && ( PFdY[ gx   ][ gy + 1 ][ gz   ] < TolHd ) && ( PFdZ[ gx   ][ gy + 1 ][ gz   ] < TolHd );
-                b5 = ( PFdX[ gx   ][ gy   ][ gz - 1 ] < TolHd ) && ( PFdY[ gx   ][ gy   ][ gz - 1 ] < TolHd ) && ( PFdZ[ gx   ][ gy   ][ gz - 1 ] < TolHd );
-                b6 = ( PFdX[ gx   ][ gy   ][ gz + 1 ] < TolHd ) && ( PFdY[ gx   ][ gy   ][ gz + 1 ] < TolHd ) && ( PFdZ[ gx   ][ gy   ][ gz + 1 ] < TolHd );
+                b1 = ( PFdX1[ g1 - 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX2[ g1 - 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX3[ g1 - 1 ][ g2   ][ g3   ] < TolHd );
+                b2 = ( PFdX1[ g1 + 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX2[ g1 + 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX3[ g1 + 1 ][ g2   ][ g3   ] < TolHd );
+                b3 = ( PFdX1[ g1   ][ g2 - 1 ][ g3   ] < TolHd ) && ( PFdX2[ g1   ][ g2 - 1 ][ g3   ] < TolHd ) && ( PFdX3[ g1   ][ g2 - 1 ][ g3   ] < TolHd );
+                b4 = ( PFdX1[ g1   ][ g2 + 1 ][ g3   ] < TolHd ) && ( PFdX2[ g1   ][ g2 + 1 ][ g3   ] < TolHd ) && ( PFdX3[ g1   ][ g2 + 1 ][ g3   ] < TolHd );
+                b5 = ( PFdX1[ g1   ][ g2   ][ g3 - 1 ] < TolHd ) && ( PFdX2[ g1   ][ g2   ][ g3 - 1 ] < TolHd ) && ( PFdX3[ g1   ][ g2   ][ g3 - 1 ] < TolHd );
+                b6 = ( PFdX1[ g1   ][ g2   ][ g3 + 1 ] < TolHd ) && ( PFdX2[ g1   ][ g2   ][ g3 + 1 ] < TolHd ) && ( PFdX3[ g1   ][ g2   ][ g3 + 1 ] < TolHd );
 
                 if ( b1 || b2 || b3 || b4 || b5 || b6 ) {
 
@@ -480,32 +457,37 @@ void Scatter3d::Evolve()
                 }
             }       
         }
-
         tmpVec.swap(TB);
         tmpVec.clear();
-
         log->log("[Scatter3d] TB size = %d\n", TB.size());
-
 
         // `````````````````````````````````````````````````````````````````
 
-        #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz)
-
+        #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)
         for (int i = 0; i < TA.size(); i++)
         {
-            grid = IdxToGrid(TA[i]);
-            gx = grid[0];
-            gy = grid[1];
-            gz = grid[2];
+            g3 = TA[i] % M2;
+            g2 = (TA[i] % M1) / M2;
+            g1 = TA[i] / M1;
 
-            tmpVec.push_back(GridToIdx(gx + 1, gy  , gz  ));
-            tmpVec.push_back(GridToIdx(gx - 1, gy  , gz  ));
-            tmpVec.push_back(GridToIdx(gx  , gy + 1, gz  ));
-            tmpVec.push_back(GridToIdx(gx  , gy - 1, gz  ));  
-            tmpVec.push_back(GridToIdx(gx  , gy  , gz + 1));
-            tmpVec.push_back(GridToIdx(gx  , gy  , gz - 1));            
+            if (g1 + 1 != BoxShape[0] - 1)
+                tmpVec.push_back(GridToIdx(g1 + 1, g2  , g3 ));
+
+            if (g1 - 1 != 0)
+                tmpVec.push_back(GridToIdx(g1 - 1, g2  , g3 ));
+
+            if (g2 + 1 != BoxShape[1] - 1)
+                tmpVec.push_back(GridToIdx(g1  , g2 + 1, g3 ));
+
+            if (g2 - 1 != 0)
+                tmpVec.push_back(GridToIdx(g1  , g2 - 1, g3 ));  
+
+            if (g3 + 1 != BoxShape[2] - 1)     
+                tmpVec.push_back(GridToIdx(g1  , g2  , g3 + 1 ));
+
+            if (g3 - 1 != 0)
+                tmpVec.push_back(GridToIdx(g1  , g2  , g3 - 1 ));       
         }
-
         // Combine TA and tmpVec
         TA.reserve(TA.size() + tmpVec.size());
         TA.insert(TA.end(), tmpVec.begin(), tmpVec.end());
@@ -514,35 +496,15 @@ void Scatter3d::Evolve()
         // Find unique elements
         __gnu_parallel::sort(TA.begin(),TA.end());
         it = std::unique (TA.begin(), TA.end()); 
-        TA.resize(std::distance(TA.begin(),it));
-
-        // Erase elements at the domain boundary (DBi)
-
-		it = TA.begin();
-
-		while ( it != TA.end() )
-        {
-			index = std::distance( TA.begin(), it );
-            grid = IdxToGrid(TA[index]);
-            gx = grid[0];
-            gy = grid[1];
-            gz = grid[2];
-
-            if (gx == 0 || gy == 0 || gz == 0 || gx == BoxShape[0] - 1 || gy == BoxShape[1] - 1 || gz == BoxShape[2] - 1)  {
-                it = TA.erase(it);
-            }
-			else  {
-				++it;
-			}
-        }          
+        TA.resize(std::distance(TA.begin(),it));        
     }
     else  // Full grid approach
     {
         TB = DBi;
     }
 
-	log->log("[Scatter3d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
-	log->log("[Scatter3d] DBi = %d DBi2 = %d\n", DBi.size(), DBi2.size());
+    log->log("[Scatter3d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
+    log->log("[Scatter3d] DBi = %d DBi2 = %d\n", DBi.size(), DBi2.size());
 
     t_1_end = omp_get_wtime();
     t_1_elapsed = t_1_end - t_1_begin;
@@ -559,29 +521,27 @@ void Scatter3d::Evolve()
 
     for (int tt = 0; tt < (int)(TIME / kk); tt ++)
     {
-		t_0_begin = omp_get_wtime();
+	t_0_begin = omp_get_wtime();
         t_1_begin = omp_get_wtime();
 
     	#pragma omp parallel for
+    	for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
 
-    	for (int i = 1; i < BoxShape[0] - 1 ; i ++)  {
+            for (int i2 = 1; i2 < BoxShape[1] - 1 ; i2 ++)  {
 
-        	for (int j = 1; j < BoxShape[1] - 1 ; j ++)  {
-
-            	for (int k = 1; k < BoxShape[2] - 1 ; k++)  {
+            	for (int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
           
-                	FF[i][j][k] = xZERO;
-                	KK1[i][j][k] = xZERO;
-                	KK2[i][j][k] = xZERO;
-                	KK3[i][j][k] = xZERO;
-                	KK4[i][j][k] = xZERO;
+                    FF[i1][i2][i3] = xZERO;
+                    KK1[i1][i2][i3] = xZERO;
+                    KK2[i1][i2][i3] = xZERO;
+                    KK3[i1][i2][i3] = xZERO;
+                    KK4[i1][i2][i3] = xZERO;
             	}
-        	}
+            }
     	}
-
-		t_1_end = omp_get_wtime();
+	    t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
-        //log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
+        log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
 
         // Check if TB of f is higher than TolL
         
@@ -592,34 +552,33 @@ void Scatter3d::Evolve()
             TBL.clear();
 
             // omp-a-1
-            #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz, b1, b2, b3, b4, b5, b6)
-
+            #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
             for (int i = 0; i < TB.size(); i++)
             {
-                grid = IdxToGrid(TB[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
+                g3 = TB[i] % M2;
+                g2 = (TB[i] % M1) / M2;
+                g1 = TB[i] / M1;
 
-                b1 = PF[gx][gy][gz] >= TolL;
-                b2 = PFdX[gx][gy][gz] >= TolLd;
-                b3 = PFdY[gx][gy][gz] >= TolLd;
-                b4 = PFdZ[gx][gy][gz] >= TolLd;
+                b1 = PF[g1][g2][g3] >= TolL;
+                b2 = PFdX1[g1][g2][g3] >= TolLd;
+                b3 = PFdX2[g1][g2][g3] >= TolLd;
+                b4 = PFdX3[g1][g2][g3] >= TolLd;
+
                 // Not in DBi2
-                b5 = gx > 1 && gy > 1 && gz > 1;
-                b6 = gx < BoxShape[0] - 2 && gy < BoxShape[1] - 2 && gz < BoxShape[2] - 2;
+                b5 = g1 > 1 && g2 > 1 && g3 > 1 ;
+                b6 = g1 < BoxShape[0] - 2 && g2 < BoxShape[1] - 2 && g3 < BoxShape[2] - 2 ;
 
-                if ( (b1 || b2 || b3 || b4 ) && b5 && b6 )  {
+                if ( (b1 || b2 || b3 || b4) && b5 && b6 )  {
                     tmpVec.push_back(TB[i]);
                 }
             }
-			tmpVec.swap(TBL);
+	        tmpVec.swap(TBL);
             tmpVec.clear();
             TBL_P = TBL;
 
-			t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
+            log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
         }    
 
         isExtrapolate = false;
@@ -646,39 +605,38 @@ void Scatter3d::Evolve()
             for ( it = TBL.begin(); it != TBL.end(); it ++ )  {
 
                 index = std::distance( TBL.begin(), it );
-                grid = IdxToGrid(TBL[index]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];  
+                g3 = TBL[index] % M2;
+                g2 = (TBL[index] % M1) / M2;
+                g1 = TBL[index] / M1;
 
-                if ( F[gx - 1][gy][gz] == xZERO )  {
+                if ( F[g1 - 1][g2][g3] == xZERO )  {
 
-                    ExFF.push_back(GridToIdx(gx - 1, gy, gz));
+                    ExFF.push_back(GridToIdx(g1 - 1, g2, g3));
                 }
 
-                if ( F[gx + 1][gy][gz] == xZERO )  {
+                if ( F[g1 + 1][g2][g3] == xZERO )  {
 
-                    ExFF.push_back(GridToIdx(gx + 1, gy, gz));
+                    ExFF.push_back(GridToIdx(g1 + 1, g2, g3));
                 }
 
-                if ( F[gx][gy - 1][gz] == xZERO )  {
+                if ( F[g1][g2 - 1][g3] == xZERO )  {
 
-                    ExFF.push_back(GridToIdx(gx, gy - 1, gz));
+                    ExFF.push_back(GridToIdx(g1, g2 - 1, g3));
                 }
 
-                if ( F[gx][gy + 1][gz] == xZERO )  {
+                if ( F[g1][g2 + 1][g3] == xZERO )  {
 
-                    ExFF.push_back(GridToIdx(gx, gy + 1, gz));
+                    ExFF.push_back(GridToIdx(g1, g2 + 1, g3));
                 }
 
-                if ( F[gx][gy][gz - 1] == xZERO )  {
+                if ( F[g1][g2][g3 - 1] == xZERO )  {
 
-                    ExFF.push_back(GridToIdx(gx, gy, gz - 1));
+                    ExFF.push_back(GridToIdx(g1, g2, g3 - 1));
                 }
 
-                if ( F[gx][gy][gz + 1] == xZERO )  {
+                if ( F[g1][g2][g3 + 1] == xZERO )  {
 
-                    ExFF.push_back(GridToIdx(gx, gy, gz + 1));
+                    ExFF.push_back(GridToIdx(g1, g2, g3 + 1));
                 }
             }
 
@@ -696,44 +654,40 @@ void Scatter3d::Evolve()
             it = std::unique (ExFF.begin(), ExFF.end()); 
             ExFF.resize(std::distance(ExFF.begin(),it));
 
-			t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
+            log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
 
             // .....................................................................
 
             // Find the direction of Outer to Edge points
 
             t_1_begin = omp_get_wtime();
-
             ExTBL.clear();
-
-			it = ExFF.begin();
+	        it = ExFF.begin();
             
             while ( it != ExFF.end() )  {
 
                 index = std::distance( ExFF.begin(), it );
-                grid = IdxToGrid(ExFF[index]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-
+                g3 = ExFF[index] % M2;
+                g2 = (ExFF[index] % M1) / M2;
+                g1 = ExFF[index] / M1;
                 sum = xZERO;
                 count = 0;
 
                 isEmpty = true;
                 val_min_abs = 100000000;
 
-                if ( F[gx - 1][gy][gz] != xZERO )  {
+                if ( F[g1 - 1][g2][g3] != xZERO )  {
 
-					if ( std::abs(F[gx - 1][gy][gz]) < val_min_abs &&  F[gx - 2][gy][gz] != xZERO )  {
-                    	val_min_abs = std::abs(F[gx - 1][gy][gz]);
-                    	val_min = F[gx - 1][gy][gz];
-					}
+		            if ( std::abs(F[g1 - 1][g2][g3]) < val_min_abs &&  F[g1 - 2][g2][g3] != xZERO )  {
+                    	val_min_abs = std::abs(F[g1 - 1][g2][g3]);
+                    	val_min = F[g1 - 1][g2][g3];
+		            }
 
-                    if (F[gx - 2][gy][gz] != xZERO)  {
+                    if (F[g1 - 2][g2][g3] != xZERO)  {
 
-                        val = exp( 2.0 * std::log(F[gx - 1][gy][gz]) - std::log(F[gx - 2][gy][gz]) );
+                        val = exp( 2.0 * std::log(F[g1 - 1][g2][g3]) - std::log(F[g1 - 2][g2][g3]) );
 
                         if ( !isnan( real(val) ) && !isnan( imag(val) ) && !isinf( real(val) ) && !isinf( imag(val) ) )  
                         {
@@ -744,111 +698,106 @@ void Scatter3d::Evolve()
                     }
                 }
 
-                if ( F[gx + 1][gy][gz] != xZERO )  {
+                if ( F[g1 + 1][g2][g3] != xZERO )  {
 
-                    if ( std::abs(F[gx + 1][gy][gz]) < val_min_abs && F[gx + 2][gy][gz] != xZERO  )  {
-                        val_min_abs = std::abs(F[gx + 1][gy][gz]);
-                        val_min = F[gx + 1][gy][gz];
+                    if ( std::abs(F[g1 + 1][g2][g3]) < val_min_abs && F[g1 + 2][g2][g3] != xZERO  )  {
+                        val_min_abs = std::abs(F[g1 + 1][g2][g3]);
+                        val_min = F[g1 + 1][g2][g3];
                     }
 
-                    if ( F[gx + 2][gy][gz] != xZERO )  {
+                    if ( F[g1 + 2][g2][g3] != xZERO )  {
 
-                        val = exp( 2.0 * std::log(F[gx + 1][gy][gz]) - std::log(F[gx + 2][gy][gz]) );
+                        val = exp( 2.0 * std::log(F[g1 + 1][g2][g3]) - std::log(F[g1 + 2][g2][g3]) );
 
                         if ( !isnan( real(val) ) && !isnan( imag(val) ) && !isinf( real(val) ) && !isinf( imag(val) ) )  
                         {
                             sum += val;
                             count += 1;
                         }
-
                         isEmpty = false;
                     }
                 }
 
-                if ( F[gx][gy - 1][gz] != xZERO )  {
+                if ( F[g1][g2 - 1][g3] != xZERO )  {
 
-                    if ( std::abs(F[gx][gy - 1][gz]) < val_min_abs && F[gx][gy - 2][gz] != xZERO  )  {
+                    if ( std::abs(F[g1][g2 - 1][g3]) < val_min_abs && F[g1][g2 - 2][g3] != xZERO  )  {
 
-                        val_min_abs = std::abs(F[gx][gy - 1][gz]);
-                        val_min = F[gx][gy - 1][gz];
+                        val_min_abs = std::abs(F[g1][g2 - 1][g3]);
+                        val_min = F[g1][g2 - 1][g3];
                     }
 
-                    if ( F[gx][gy - 2][gz] != xZERO )  {
+                    if ( F[g1][g2 - 2][g3] != xZERO )  {
 
-                        val = exp( 2.0 * std::log(F[gx][gy - 1][gz]) - std::log(F[gx][gy - 2][gz]) );
+                        val = exp( 2.0 * std::log(F[g1][g2 - 1][g3]) - std::log(F[g1][g2 - 2][g3]) );
 
                         if ( !isnan( real(val) ) && !isnan( imag(val) ) && !isinf( real(val) ) && !isinf( imag(val) ) )  
                         {
                             sum += val;
                             count += 1;
                         }
-
                         isEmpty = false;
                     }
                 }
 
-                if ( F[gx][gy + 1][gz] != xZERO )  {
+                if ( F[g1][g2 + 1][g3] != xZERO )  {
 
-                    if ( std::abs(F[gx][gy + 1][gz]) < val_min_abs && F[gx][gy+2][gz] != xZERO )  {
+                    if ( std::abs(F[g1][g2 + 1][g3]) < val_min_abs && F[g1][g2 + 2][g3] != xZERO )  {
 
-                        val_min_abs = std::abs(F[gx][gy + 1][gz]);
-                        val_min = F[gx][gy + 1][gz];
+                        val_min_abs = std::abs(F[g1][g2 + 1][g3]);
+                        val_min = F[g1][g2 + 1][g3];
                     }
 
-                    if ( F[gx][gy + 2][gz] != xZERO )  {
+                    if ( F[g1][g2 + 2][g3] != xZERO )  {
 
-                        val = exp( 2.0 * std::log(F[gx][gy + 1][gz]) - std::log(F[gx][gy + 2][gz]) );
+                        val = exp( 2.0 * std::log(F[g1][g2 + 1][g3]) - std::log(F[g1][g2 + 2][g3]) );
 
                         if ( !isnan( real(val) ) && !isnan( imag(val) ) && !isinf( real(val) ) && !isinf( imag(val) ) )  
                         {
                             sum += val;
                             count += 1;
                         }
-
                         isEmpty = false;
                     }
                 }
 
-                if ( F[gx][gy][gz - 1] != xZERO )  {
+                if ( F[g1][g2][g3 - 1] != xZERO )  {
 
-                    if ( std::abs(F[gx][gy][gz - 1]) < val_min_abs && F[gx][gy][gz-2] != xZERO )  {
+                    if ( std::abs(F[g1][g2][g3 - 1]) < val_min_abs && F[g1][g2][g3 - 2] != xZERO )  {
 
-                        val_min_abs = std::abs(F[gx][gy][gz - 1]);
-                        val_min = F[gx][gy][gz - 1];
+                        val_min_abs = std::abs(F[g1][g2][g3 - 1]);
+                        val_min = F[g1][g2][g3 - 1];
                     }
 
-                    if ( F[gx][gy][gz - 2] != xZERO )  {
+                    if ( F[g1][g2][g3 - 2] != xZERO )  {
 
-                        val = exp( 2.0 * std::log(F[gx][gy][gz - 1]) - std::log(F[gx][gy][gz - 2]) );
+                        val = exp( 2.0 * std::log(F[g1][g2][g3 - 1]) - std::log(F[g1][g2][g3 - 2]) );
 
                         if ( !isnan( real(val) ) && !isnan( imag(val) ) && !isinf( real(val) ) && !isinf( imag(val) ) )  
                         {
                             sum += val;
                             count += 1;
                         }
-
                         isEmpty = false;
                     }
                 }
 
-                if ( F[gx][gy][gz + 1] != xZERO )  {
+                if ( F[g1][g2][g3 + 1] != xZERO )  {
 
-                    if ( std::abs(F[gx][gy][gz + 1]) < val_min_abs && F[gx][gy][gz+2] != xZERO )  {
+                    if ( std::abs(F[g1][g2][g3 + 1]) < val_min_abs && F[g1][g2][g3 + 2] != xZERO )  {
 
-                        val_min_abs = std::abs(F[gx][gy][gz + 1]);
-                        val_min = F[gx][gy][gz + 1];
+                        val_min_abs = std::abs(F[g1][g2][g3 + 1]);
+                        val_min = F[g1][g2][g3 + 1];
                     }
 
-                    if ( F[gx][gy][gz + 2] != xZERO )  {
+                    if ( F[g1][g2][g3 + 2] != xZERO )  {
 
-                        val = exp( 2.0 * std::log(F[gx][gy][gz + 1]) - std::log(F[gx][gy][gz + 2]) );
+                        val = exp( 2.0 * std::log(F[g1][g2][g3 + 1]) - std::log(F[g1][g2][g3 + 2]) );
 
                         if ( !isnan( real(val) ) && !isnan( imag(val) ) && !isinf( real(val) ) && !isinf( imag(val) ) )  
                         {
                             sum += val;
                             count += 1;
                         }
-
                         isEmpty = false;
                     }
                 }
@@ -865,31 +814,27 @@ void Scatter3d::Evolve()
 
                     if ( std::abs( std::complex<double> (std::real(sum) / count, std::imag(sum) / count) ) > val_min_abs * exp(-ExReduce * H[0]) )  {
 
-
                         ExTBL.push_back( val_min * exp(-ExReduce * H[0]) );
                     }
                     else  {
 
                         ExTBL.push_back( std::complex<double> (std::real(sum) / count, std::imag(sum) / count) );
                     }
-					++it;
+		            ++it;
                 }
             }
 
-            #pragma omp parallel for private(grid, gx, gy, gz)
-
+            #pragma omp parallel for private(g1, g2, g3)
             for ( int i = 0; i < ExFF.size(); i++ )  {
 
-                grid = IdxToGrid(ExFF[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                F[gx][gy][gz] = ExTBL[i];
+                g3 = ExFF[i] % M2;
+                g2 = (ExFF[i] % M1) / M2;
+                g1 = ExFF[i] / M1;
+                F[g1][g2][g3] = ExTBL[i];
             }
-
-			t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
+            log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
 
             // ............................................................................................. Extrapolation
 
@@ -897,22 +842,20 @@ void Scatter3d::Evolve()
 
             t_1_begin = omp_get_wtime();
 
-            #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz)
-
+            #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)
             for (int i = 0; i < ExFF.size(); i++)
             {
-                grid = IdxToGrid(ExFF[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
+                g3 = ExFF[i] % M2;
+                g2 = (ExFF[i] % M1) / M2;
+                g1 = ExFF[i] / M1;
 
-                tmpVec.push_back(GridToIdx(gx  , gy  , gz  ));
-                tmpVec.push_back(GridToIdx(gx + 1, gy  , gz  ));
-                tmpVec.push_back(GridToIdx(gx - 1, gy  , gz  ));
-                tmpVec.push_back(GridToIdx(gx  , gy + 1, gz  ));
-                tmpVec.push_back(GridToIdx(gx  , gy - 1, gz  ));  
-                tmpVec.push_back(GridToIdx(gx  , gy  , gz + 1));
-                tmpVec.push_back(GridToIdx(gx  , gy  , gz - 1));            
+                tmpVec.push_back(GridToIdx( g1  , g2  , g3 ));
+                tmpVec.push_back(GridToIdx( g1 + 1, g2  , g3 ));
+                tmpVec.push_back(GridToIdx( g1 - 1, g2  , g3 ));
+                tmpVec.push_back(GridToIdx( g1  , g2 + 1, g3 ));
+                tmpVec.push_back(GridToIdx( g1  , g2 - 1, g3 ));  
+                tmpVec.push_back(GridToIdx( g1  , g2  , g3 + 1 ));
+                tmpVec.push_back(GridToIdx( g1  , g2  , g3 - 1 ));          
             }
 
             // Combine TA and tmpVec
@@ -925,114 +868,125 @@ void Scatter3d::Evolve()
             it = std::unique (TA.begin(), TA.end()); 
             TA.resize(std::distance(TA.begin(),it));
 
-			t_1_end = omp_get_wtime();
+	        t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
+            log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
      
             // Runge–Kutta 4
             t_1_begin = omp_get_wtime();
 
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
-
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
 
-                KK1[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( F[gx - 1][gy][gz] - 2.0 * F[gx][gy][gz] + F[gx + 1][gy][gz] )
-                                + Hisq[1] * ( F[gx][gy - 1][gz] - 2.0 * F[gx][gy][gz] + F[gx][gy + 1][gz] ) 
-                                + Hisq[2] * ( F[gx][gy][gz - 1] - 2.0 * F[gx][gy][gz] + F[gx][gy][gz + 1] ) 
-                               )  - I * k2hb * Potential(xx, yy, zz) * F[gx][gy][gz];
+                KK1[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( F[g1 - 1][g2][g3] - 2.0 * F[g1][g2][g3] + F[g1 + 1][g2][g3] )
+                                  + Hisq[1] * ( F[g1][g2 - 1][g3] - 2.0 * F[g1][g2][g3] + F[g1][g2 + 1][g3] ) 
+                                  + Hisq[2] * ( F[g1][g2][g3 - 1] - 2.0 * F[g1][g2][g3] + F[g1][g2][g3 + 1] )
+                               )  - I * k2hb * Potential_HH(xx1, xx2, xx3) * F[g1][g2][g3];
             }
 
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-1: CASE 1 KK1) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
 
-                KK2[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 0.5 * KK1[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 0.5 * KK1[gx + 1][gy][gz] ) )
-                                + Hisq[1] * ( ( F[gx][gy - 1][gz] + 0.5 * KK1[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 0.5 * KK1[gx][gy + 1][gz] ) )
-                                + Hisq[2] * ( ( F[gx][gy][gz - 1] + 0.5 * KK1[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 0.5 * KK1[gx][gy][gz + 1] ) )
-                                ) - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] );
+                KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
+                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
+                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
+                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
             }
 
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-2: CASE 1 KK2) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
-                
-                KK3[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 0.5 * KK2[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 0.5 * KK2[gx + 1][gy][gz] ) )
-                                + Hisq[1] * ( ( F[gx][gy - 1][gz] + 0.5 * KK2[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 0.5 * KK2[gx][gy + 1][gz] ) )
-                                + Hisq[2] * ( ( F[gx][gy][gz - 1] + 0.5 * KK2[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 0.5 * KK2[gx][gy][gz + 1] ) )
-                               )  - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] );
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
+
+                KK3[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK2[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK2[g1 + 1][g2][g3] ) )
+                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK2[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK2[g1][g2 + 1][g3] ) )
+                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK2[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK2[g1][g2][g3 + 1] ) )
+                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] );
             }
 
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-3: CASE 1 KK3) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
 
-                KK4[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 1.0 * KK3[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 1.0 * KK3[gx + 1][gy][gz] ) )
-                                + Hisq[1] * ( ( F[gx][gy - 1][gz] + 1.0 * KK3[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 1.0 * KK3[gx][gy + 1][gz] ) )
-                                + Hisq[2] * ( ( F[gx][gy][gz - 1] + 1.0 * KK3[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 1.0 * KK3[gx][gy][gz + 1] ) )
-                               )  - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] );
+                KK4[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 1.0 * KK3[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 1.0 * KK3[g1 + 1][g2][g3] ) )
+                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 1.0 * KK3[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 1.0 * KK3[g1][g2 + 1][g3] ) )
+                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 1.0 * KK3[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 1.0 * KK3[g1][g2][g3 + 1] ) )
+                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] );
             }
 
-            #pragma omp parallel for private(grid, gx, gy, gz)
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-4: CASE 1 KK4) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
+            #pragma omp parallel for private(g1, g2, g3)
             for (int i = 0; i < TA.size(); i++)  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-
-                FF[gx][gy][gz] = F[gx][gy][gz] + ( KK1[gx][gy][gz] + 2.0 * KK2[gx][gy][gz] + 2.0 * KK3[gx][gy][gz] + KK4[gx][gy][gz] ) / 6.0;
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                FF[g1][g2][g3] = F[g1][g2][g3] + ( KK1[g1][g2][g3] + 2.0 * KK2[g1][g2][g3] + 2.0 * KK3[g1][g2][g3] + KK4[g1][g2][g3] ) / 6.0;
             }
+
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-5: CASE 1 FF) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
             
-            #pragma omp parallel for private(grid, gx, gy, gz)
-
+            #pragma omp parallel for private(g1, g2, g3)
             for (int i = 0; i < ExFF.size(); i++)  {
 
-                grid = IdxToGrid(ExFF[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-
-                PFdX[gx][gy][gz] = 0.5 * Hi[0] * std::abs( FF[gx + 1][gy][gz] - FF[gx - 1][gy][gz]);
-                PFdY[gx][gy][gz] = 0.5 * Hi[1] * std::abs( FF[gx][gy + 1][gz] - FF[gx][gy - 1][gz]);
-                PFdZ[gx][gy][gz] = 0.5 * Hi[2] * std::abs( FF[gx][gy][gz + 1] - FF[gx][gy][gz - 1]);
-            }
-
-			t_1_end = omp_get_wtime();
+                g3 = ExFF[i] % M2;
+                g2 = (ExFF[i] % M1) / M2;
+                g1 = ExFF[i] / M1;
+                PFdX1[g1][g2][g3] = 0.5 * Hi[0] * std::abs( FF[g1 + 1][g2][g3] - FF[g1 - 1][g2][g3]);
+                PFdX2[g1][g2][g3] = 0.5 * Hi[1] * std::abs( FF[g1][g2 + 1][g3] - FF[g1][g2 - 1][g3]);
+                PFdX3[g1][g2][g3] = 0.5 * Hi[2] * std::abs( FF[g1][g2][g3 + 1] - FF[g1][g2][g3 - 1]);            
+	    }
+            t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-c-2 CASE 1 RK4) = %lf sec\n", t_1_elapsed); 
+            log->log("Elapsed time (omp-kk-6: CASE 1 PF) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
             // check Multiple Expanding 
             // TBL = index of FF that FF(TBL) is higher than TolL
@@ -1041,21 +995,19 @@ void Scatter3d::Evolve()
 
             t_1_begin = omp_get_wtime();
 
-            #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz, b1, b2, b3, b4, b5, b6)
-
+            #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
             for (int i = 0; i < ExFF.size(); i++)
             {
-                grid = IdxToGrid(ExFF[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
+                g3 = ExFF[i] % M2;
+                g2 = (ExFF[i] % M1) / M2;
+                g1 = ExFF[i] / M1;
 
-                b1 = std::abs(FF[gx][gy][gz] * std::conj(FF[gx][gy][gz])) >= TolH;
-                b2 = PFdX[gx][gy][gz] >= TolHd;
-                b3 = PFdY[gx][gy][gz] >= TolHd;
-                b4 = PFdZ[gx][gy][gz] >= TolHd;
-                b5 = gx > 1 && gy > 1 && gz > 1;
-                b6 = gx < BoxShape[0] - 2 && gy < BoxShape[1] - 2 && gz < BoxShape[2] - 2;
+                b1 = std::abs(FF[g1][g2][g3] * std::conj(FF[g1][g2][g3])) >= TolH;
+                b2 = PFdX1[g1][g2][g3] >= TolHd;
+                b3 = PFdX2[g1][g2][g3] >= TolHd;
+                b4 = PFdX3[g1][g2][g3] >= TolHd;
+                b5 = g1 > 1 && g2 > 1 && g3 > 1;
+                b6 = g1 < BoxShape[0] - 2 && g2 < BoxShape[1] - 2 && g3 < BoxShape[2] - 2;
 
                 if (  ( b1 || b2 || b3 || b4 ) && b5 && b6 )  {
                     tmpVec.push_back(ExFF[i]);
@@ -1082,9 +1034,9 @@ void Scatter3d::Evolve()
             it = std::unique (TBL_P.begin(), TBL_P.end()); 
             TBL_P.resize(std::distance(TBL_P.begin(),it));
 
-			t_1_end = omp_get_wtime();
+	    t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-c-3 CASE 1 TBL TBL_P) = %lf sec\n", t_1_elapsed); 
+            log->log("Elapsed time (omp-c-3 CASE 1 TBL TBL_P) = %lf sec\n", t_1_elapsed); 
         }
 
         // CASE 2: Truncating without extrapolation
@@ -1093,264 +1045,285 @@ void Scatter3d::Evolve()
         {
             t_1_begin = omp_get_wtime();
 
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
-
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
 
-                KK1[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( F[gx - 1][gy][gz] - 2.0 * F[gx][gy][gz] + F[gx + 1][gy][gz] )
-                                + Hisq[1] * ( F[gx][gy - 1][gz] - 2.0 * F[gx][gy][gz] + F[gx][gy + 1][gz] ) 
-                                + Hisq[2] * ( F[gx][gy][gz - 1] - 2.0 * F[gx][gy][gz] + F[gx][gy][gz + 1] ) 
-                               )  - I * k2hb * Potential(xx, yy, zz) * F[gx][gy][gz];
+                KK1[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( F[g1 - 1][g2][g3] - 2.0 * F[g1][g2][g3] + F[g1 + 1][g2][g3] )
+                                  + Hisq[1] * ( F[g1][g2 - 1][g3] - 2.0 * F[g1][g2][g3] + F[g1][g2 + 1][g3] ) 
+                                  + Hisq[2] * ( F[g1][g2][g3 - 1] - 2.0 * F[g1][g2][g3] + F[g1][g2][g3 + 1] )
+                               )  - I * k2hb * Potential_HH(xx1, xx2, xx3) * F[g1][g2][g3];
             }
 
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
-
-            for (int i = 0; i < TA.size(); i++)  {
-
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
-
-                KK2[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 0.5 * KK1[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 0.5 * KK1[gx + 1][gy][gz] ) )
-                                + Hisq[1] * ( ( F[gx][gy - 1][gz] + 0.5 * KK1[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 0.5 * KK1[gx][gy + 1][gz] ) )
-                                + Hisq[2] * ( ( F[gx][gy][gz - 1] + 0.5 * KK1[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 0.5 * KK1[gx][gy][gz + 1] ) )
-                                ) - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] );
-            }
-
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
-
-            for (int i = 0; i < TA.size(); i++)  {
-
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
-                
-                KK3[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 0.5 * KK2[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 0.5 * KK2[gx + 1][gy][gz] ) )
-                                + Hisq[1] * ( ( F[gx][gy - 1][gz] + 0.5 * KK2[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 0.5 * KK2[gx][gy + 1][gz] ) )
-                                + Hisq[2] * ( ( F[gx][gy][gz - 1] + 0.5 * KK2[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 0.5 * KK2[gx][gy][gz + 1] ) )
-                               )  - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] );
-            }
-
-            #pragma omp parallel for private(grid, gx, gy, gz, xx, yy, zz)
-
-            for (int i = 0; i < TA.size(); i++)  {
-
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-                xx = Box[0] + gx * H[0];
-                yy = Box[2] + gy * H[1];
-                zz = Box[4] + gz * H[2];
-
-                KK4[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 1.0 * KK3[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 1.0 * KK3[gx + 1][gy][gz] ) )
-                                + Hisq[1] * ( ( F[gx][gy - 1][gz] + 1.0 * KK3[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 1.0 * KK3[gx][gy + 1][gz] ) )
-                                + Hisq[2] * ( ( F[gx][gy][gz - 1] + 1.0 * KK3[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 1.0 * KK3[gx][gy][gz + 1] ) )
-                               )  - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] );
-            }
-
-            #pragma omp parallel for private(grid, gx, gy, gz)
-
-            for (int i = 0; i < TA.size(); i++)  {
-
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-
-                FF[gx][gy][gz] = F[gx][gy][gz] + ( KK1[gx][gy][gz] + 2.0 * KK2[gx][gy][gz] + 2.0 * KK3[gx][gy][gz] + KK4[gx][gy][gz] ) / 6.0;
-
-            }
-
-			t_1_end = omp_get_wtime();
+            t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-d-1 CASE 2 RK4) = %lf sec\n", t_1_elapsed); 
+            log->log("Elapsed time (omp-kk-11: CASE 2 KK1) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
+
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
+            for (int i = 0; i < TA.size(); i++)  {
+
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
+
+                KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
+                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
+                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
+                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
+            }
+
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-12: CASE 2 KK2) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
+
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
+            for (int i = 0; i < TA.size(); i++)  {
+
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
+
+                KK3[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK2[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK2[g1 + 1][g2][g3] ) )
+                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK2[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK2[g1][g2 + 1][g3] ) )
+                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK2[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK2[g1][g2][g3 + 1] ) )
+                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] );
+            }
+
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-13: CASE 2 KK3) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
+
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
+            for (int i = 0; i < TA.size(); i++)  {
+
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                xx1 = Box[0] + g1 * H[0];
+                xx2 = Box[2] + g2 * H[1];
+                xx3 = Box[4] + g3 * H[2];
+
+                KK4[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 1.0 * KK3[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 1.0 * KK3[g1 + 1][g2][g3] ) )
+                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 1.0 * KK3[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 1.0 * KK3[g1][g2 + 1][g3] ) )
+                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 1.0 * KK3[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 1.0 * KK3[g1][g2][g3 + 1] ) )
+                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] );
+            }
+
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-14: CASE 2 KK4) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
+
+            #pragma omp parallel for private(g1, g2, g3)
+            for (int i = 0; i < TA.size(); i++)  {
+
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+
+                FF[g1][g2][g3] = F[g1][g2][g3] + ( KK1[g1][g2][g3] + 2.0 * KK2[g1][g2][g3] + 2.0 * KK3[g1][g2][g3] + KK4[g1][g2][g3] ) / 6.0;
+            }
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-15: CASE 2 FF) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
         }   
         else if ( !isExtrapolate && isFullGrid )
         {
             // CASE 3: Full grid
+            t_1_end = omp_get_wtime();
 
-            #pragma omp parallel for private(gx, gy, gz, xx, yy, zz)
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
+            for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
+                for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
+                        g1 = i1;
+                        g2 = i2;
+                        g3 = i3;
+                        xx1 = Box[0] + g1 * H[0];
+                        xx2 = Box[2] + g2 * H[1];
+                        xx3 = Box[4] + g3 * H[2];
 
-                        gx = i;
-                        gy = j;
-                        gz = k;
-                		xx = Box[0] + gx * H[0];
-                		yy = Box[2] + gy * H[1];
-                 			zz = Box[4] + gz * H[2];
-
-                        KK1[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( F[gx - 1][gy][gz] - 2.0 * F[gx][gy][gz] + F[gx + 1][gy][gz] )
-                                        + Hisq[1] * ( F[gx][gy - 1][gz] - 2.0 * F[gx][gy][gz] + F[gx][gy + 1][gz] ) 
-                                        + Hisq[2] * ( F[gx][gy][gz - 1] - 2.0 * F[gx][gy][gz] + F[gx][gy][gz + 1] ) 
-                                    )  - I * k2hb * Potential(xx, yy, zz) * F[gx][gy][gz];
+                        KK1[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( F[g1 - 1][g2][g3] - 2.0 * F[g1][g2][g3] + F[g1 + 1][g2][g3] )
+                                        + Hisq[1] * ( F[g1][g2 - 1][g3] - 2.0 * F[g1][g2][g3] + F[g1][g2 + 1][g3] ) 
+                                        + Hisq[2] * ( F[g1][g2][g3 - 1] - 2.0 * F[g1][g2][g3] + F[g1][g2][g3 + 1] )
+                                        )  - I * k2hb * Potential_HH(xx1, xx2, xx3) * F[g1][g2][g3];
                     }
                 }
             }
 
-            #pragma omp parallel for private(gx, gy, gz, xx, yy, zz)
+	        t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-21: CASE 3 KK1) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
+            for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
+                for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                        gx = i;
-                        gy = j;
-                        gz = k;
-                		xx = Box[0] + gx * H[0];
-                		yy = Box[2] + gy * H[1];
-                		zz = Box[4] + gz * H[2];
+                            g1 = i1;
+                            g2 = i2;
+                            g3 = i3;
+                            xx1 = Box[0] + g1 * H[0];
+                            xx2 = Box[2] + g2 * H[1];
+                            xx3 = Box[4] + g3 * H[2];
 
-                        KK2[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 0.5 * KK1[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 0.5 * KK1[gx + 1][gy][gz] ) )
-                                        + Hisq[1] * ( ( F[gx][gy - 1][gz] + 0.5 * KK1[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 0.5 * KK1[gx][gy + 1][gz] ) )
-                                        + Hisq[2] * ( ( F[gx][gy][gz - 1] + 0.5 * KK1[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 0.5 * KK1[gx][gy][gz + 1] ) )
-                                    ) - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 0.5 * KK1[gx][gy][gz] );
+                            KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
+                                              + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
+                                              + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
+                                             ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
                     }
                 }
             }
 
-            #pragma omp parallel for private(gx, gy, gz, xx, yy, zz)
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-22: CASE 3 KK2) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
+            for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
+                for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                        gx = i;
-                        gy = j;
-                        gz = k;
-                		xx = Box[0] + gx * H[0];
-                		yy = Box[2] + gy * H[1];
-                		zz = Box[4] + gz * H[2];
-                
-                        KK3[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 0.5 * KK2[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 0.5 * KK2[gx + 1][gy][gz] ) )
-                                        + Hisq[1] * ( ( F[gx][gy - 1][gz] + 0.5 * KK2[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 0.5 * KK2[gx][gy + 1][gz] ) )
-                                        + Hisq[2] * ( ( F[gx][gy][gz - 1] + 0.5 * KK2[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 0.5 * KK2[gx][gy][gz + 1] ) )
-                                    )  - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 0.5 * KK2[gx][gy][gz] );
+                        g1 = i1;
+                        g2 = i2;
+                        g3 = i3;
+                        xx1 = Box[0] + g1 * H[0];
+                        xx2 = Box[2] + g2 * H[1];
+                        xx3 = Box[4] + g3 * H[2];
+
+                        KK3[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK2[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK2[g1 + 1][g2][g3] ) )
+                                        + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK2[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK2[g1][g2 + 1][g3] ) )
+                                        + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK2[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK2[g1][g2][g3 + 1] ) )
+                                        ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] );
                     }
                 }
             }
 
-            #pragma omp parallel for private(gx, gy, gz, xx, yy, zz)
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-23: CASE 3 KK3) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
+            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
+            for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
+                for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                        gx = i;
-                        gy = j;
-                        gz = k;
-                		xx = Box[0] + gx * H[0];
-                		yy = Box[2] + gy * H[1];
-                		zz = Box[4] + gz * H[2];
+                        g1 = i1;
+                        g2 = i2;
+                        g3 = i3;
+                        xx1 = Box[0] + g1 * H[0];
+                        xx2 = Box[2] + g2 * H[1];
+                        xx3 = Box[4] + g3 * H[2];
 
-                        KK4[gx][gy][gz] = I * kh2m * (  Hisq[0] * ( ( F[gx - 1][gy][gz] + 1.0 * KK3[gx - 1][gy][gz] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx + 1][gy][gz] + 1.0 * KK3[gx + 1][gy][gz] ) )
-                                        + Hisq[1] * ( ( F[gx][gy - 1][gz] + 1.0 * KK3[gx][gy - 1][gz] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx][gy + 1][gz] + 1.0 * KK3[gx][gy + 1][gz] ) )
-                                        + Hisq[2] * ( ( F[gx][gy][gz - 1] + 1.0 * KK3[gx][gy][gz - 1] ) - 2.0 * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] ) + ( F[gx][gy][gz + 1] + 1.0 * KK3[gx][gy][gz + 1] ) )
-                                    )  - I * k2hb * Potential(xx, yy, zz) * ( F[gx][gy][gz] + 1.0 * KK3[gx][gy][gz] );
+                        KK4[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 1.0 * KK3[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 1.0 * KK3[g1 + 1][g2][g3] ) )
+                                        + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 1.0 * KK3[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 1.0 * KK3[g1][g2 + 1][g3] ) )
+                                        + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 1.0 * KK3[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 1.0 * KK3[g1][g2][g3 + 1] ) )
+                                        ) - I * k2hb * Potential_HH(xx1, xx2, xx3) * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] );
                     }
                 }
             }
 
-            #pragma omp parallel for private(gx, gy, gz)
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-24: CASE 3 KK4) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();
 
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
+            #pragma omp parallel for private(g1, g2, g3)
+            for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
+                for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                        gx = i;
-                        gy = j;
-                        gz = k;
-
-                        FF[gx][gy][gz] = F[gx][gy][gz] + ( KK1[gx][gy][gz] + 2.0 * KK2[gx][gy][gz] + 2.0 * KK3[gx][gy][gz] + KK4[gx][gy][gz] ) / 6.0;
+                        g1 = i1;
+                        g2 = i2;
+                        g3 = i3;
+                        FF[g1][g2][g3] = F[g1][g2][g3] + ( KK1[g1][g2][g3] + 2.0 * KK2[g1][g2][g3] + 2.0 * KK3[g1][g2][g3] + KK4[g1][g2][g3] ) / 6.0;
                     }
                 }
             }
-        }  
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            log->log("Elapsed time (omp-kk-5: CASE 3 FF) = %lf sec\n", t_1_elapsed);
+            t_1_begin = omp_get_wtime();  
+        }
 
         t_1_begin = omp_get_wtime();
 
         // ff(t+1) Normailzed & go on
         norm = 0.0;
 
-		if (!isFullGrid)  {
+	    if (!isFullGrid)  {
 
-        	#pragma omp parallel for private(grid, gx, gy, gz) reduction (+:norm)
+            #pragma omp parallel for private(g1, g2, g3) reduction (+:norm)
+            for (int i = 0; i < TA.size(); i++)  {
 
-        	for (int i = 0; i < TA.size(); i++)  {
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+            	norm += std::abs(FF[g1][g2][g3] * std::conj(FF[g1][g2][g3]));
+            }
+	    }  else  {
 
-        		grid = IdxToGrid(TA[i]);
-            	gx = grid[0];
-            	gy = grid[1];
-            	gz = grid[2];
-            	norm += std::abs(FF[gx][gy][gz] * std::conj(FF[gx][gy][gz]));
-        	}
-		}  else  {
+	        #pragma omp parallel for reduction (+:norm)
+            for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
-			#pragma omp parallel for private(grid, gx, gy, gz) reduction (+:norm)
+            	for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
 
-        	for (int i = 0; i < BoxShape[0]; i ++)  {
+                    for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
-            	for (int j = 0; j < BoxShape[1]; j ++)  {
-
-                	for (int k = 0; k < BoxShape[2]; k++)  {
-
-                		norm += std::abs(FF[i][j][k] * std::conj(FF[i][j][k]));
-					}
-				}
-			}
-
-		}
-
+                	    norm += std::abs(FF[i1][i2][i3] * std::conj(FF[i1][i2][i3]));
+		            }
+		        }
+	        }
+        }
         norm *= H[0] * H[1] * H[2];
         norm = 1.0 / sqrt(norm);
 
         #pragma omp parallel for
+        for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
-        for (int i = 0; i < BoxShape[0]; i ++)  {
+            for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
 
-            for (int j = 0; j < BoxShape[1]; j ++)  {
+                for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
-                for (int k = 0; k < BoxShape[2]; k++)  {
-
-                    FF[i][j][k] = norm * FF[i][j][k];
-                    F[i][j][k] = FF[i][j][k];
-					PF[i][j][k] = std::abs(F[i][j][k] * std::conj(F[i][j][k]));
+                    FF[i1][i2][i3] = norm * FF[i1][i2][i3];
+                    F[i1][i2][i3] = FF[i1][i2][i3];
+                    PF[i1][i2][i3] = std::abs(F[i1][i2][i3] * std::conj(F[i1][i2][i3]));
                 }
             }
         }     
-
-		t_1_end = omp_get_wtime();
+	    t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
-        //log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
+        log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
 
         // Truncated_New Edge
         if ( !isFullGrid )
@@ -1358,97 +1331,55 @@ void Scatter3d::Evolve()
             t_1_begin = omp_get_wtime();
 
             // PFdX
-
-            coeff = 1.0 / (2.0 * H[0]);
-
             #pragma omp parallel for
+            for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
 
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
+                for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
 
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
-
-                        PFdX[i][j][k] = std::abs(F[i+1][j][k] - F[i-1][j][k]) * coeff;
+                        PFdX1[i1][i2][i3] = std::abs(F[i1+1][i2][i3] - F[i1-1][i2][i3]) * coeff1;
+                        PFdX2[i1][i2][i3] = std::abs(F[i1][i2+1][i3] - F[i1][i2-1][i3]) * coeff2;
+                        PFdX3[i1][i2][i3] = std::abs(F[i1][i2][i3+1] - F[i1][i2][i3-1]) * coeff3;
                     }
                 }
             }
-
-            // PFdY    
-
-            coeff = 1.0 / (2.0 * H[1]);
-
-            #pragma omp parallel for
-
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
-
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
-
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
-
-                        PFdY[i][j][k] = std::abs(F[i][j+1][k] - F[i][j-1][k]) * coeff;
-                    }
-                }
-            }  
-
-            // PFdZ    
-
-            coeff = 1.0 / (2.0 * H[2]);
-
-            #pragma omp parallel for
-
-            for (int i = 1; i < BoxShape[0] - 1; i ++)  {
-
-                for (int j = 1; j < BoxShape[1] - 1; j ++)  {
-
-                    for (int k = 1; k < BoxShape[2] - 1; k++)  {
-
-                        PFdZ[i][j][k] = std::abs(F[i][j][k+1] - F[i][j][k-1]) * coeff;
-                    }
-                }
-            }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-2 PF) = %lf sec\n", t_1_elapsed); 
+            log->log("Elapsed time (omp-e-2 PF) = %lf sec\n", t_1_elapsed); 
 
             // Truncate
 
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for
+            for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
 
-            for (int i = 1; i < BoxShape[0] - 1 ; i ++)  {
+                for (int i2 = 1; i2 < BoxShape[1]  - 1; i2 ++)  {
 
-                for (int j = 1; j < BoxShape[1]  - 1; j ++)  {
-
-                    for (int k = 1; k < BoxShape[2] - 1 ; k++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
             
-                        if ( ( PF[i][j][k] < TolH ) && ( PFdX[i][j][k] < TolHd ) && ( PFdY[i][j][k] < TolHd ) && ( PFdZ[i][j][k] < TolHd ) )  {
-                            F[i][j][k] = xZERO;
-						}
+                        if ( ( PF[i1][i2][i3] < TolH ) && ( PFdX1[i1][i2][i3] < TolHd ) && ( PFdX2[i1][i2][i3] < TolHd ) && ( PFdX3[i1][i2][i3] < TolHd ) )  {
+                            F[i1][i2][i3] = xZERO;
+                        }
                     }
                 }
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-1 PF) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-1 PF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TA
 
-            #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz, b1, b2)
-
+            #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2)
             for ( int i = 0; i < TA.size(); i++ )  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
-
-                b1 = F[gx][gy][gz] != xZERO;
-                b2 = PFdX[gx][gy][gz] >= TolHd || PFdY[gx][gy][gz] >= TolHd || PFdZ[gx][gy][gz]>= TolHd;
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
+                b1 = F[g1][g2][g3] != xZERO;
+                b2 = PFdX1[g1][g2][g3] >= TolHd || PFdX2[g1][g2][g3] >= TolHd || PFdX3[g1][g2][g3] >= TolHd;
 
                 if ( b1 || b2 )  {
 
@@ -1460,37 +1391,35 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-2 TA) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-2 TA) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TB
 
-            #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz, b1, b2, b3, b4, b5, b6)
-
+            #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
             for ( int i = 0; i < TA.size(); i++ )  {
 
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
 
-                b1 = F[ gx - 1 ][ gy  ][ gz   ] == xZERO;
-                b2 = F[ gx + 1 ][ gy  ][ gz   ] == xZERO;
-                b3 = F[ gx   ][ gy -1 ][ gz   ] == xZERO;
-                b4 = F[ gx   ][ gy +1 ][ gz   ] == xZERO;
-                b5 = F[ gx   ][ gy  ][ gz - 1 ] == xZERO;
-                b6 = F[ gx   ][ gy  ][ gz + 1 ] == xZERO;
-               
+                b1 = F[ g1 - 1 ][ g2  ][ g3   ] == xZERO;
+                b2 = F[ g1 + 1 ][ g2  ][ g3   ] == xZERO;
+                b3 = F[ g1   ][ g2 -1 ][ g3   ] == xZERO;
+                b4 = F[ g1   ][ g2 +1 ][ g3   ] == xZERO;
+                b5 = F[ g1   ][ g2  ][ g3 - 1 ] == xZERO;
+                b6 = F[ g1   ][ g2  ][ g3 + 1 ] == xZERO;
+
                 if ( b1 || b2 || b3 || b4 || b5 || b6 )
                 {
-                    b1 = ( PFdX[ gx - 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdY[ gx - 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdZ[ gx - 1 ][ gy   ][ gz   ] < TolHd );
-                    b2 = ( PFdX[ gx + 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdY[ gx + 1 ][ gy   ][ gz   ] < TolHd ) && ( PFdZ[ gx + 1 ][ gy   ][ gz   ] < TolHd );
-                    b3 = ( PFdX[ gx   ][ gy - 1 ][ gz   ] < TolHd ) && ( PFdY[ gx   ][ gy - 1 ][ gz   ] < TolHd ) && ( PFdZ[ gx   ][ gy - 1 ][ gz   ] < TolHd );
-                    b4 = ( PFdX[ gx   ][ gy + 1 ][ gz   ] < TolHd ) && ( PFdY[ gx   ][ gy + 1 ][ gz   ] < TolHd ) && ( PFdZ[ gx   ][ gy + 1 ][ gz   ] < TolHd );
-                    b5 = ( PFdX[ gx   ][ gy   ][ gz - 1 ] < TolHd ) && ( PFdY[ gx   ][ gy   ][ gz - 1 ] < TolHd ) && ( PFdZ[ gx   ][ gy   ][ gz - 1 ] < TolHd );
-                    b6 = ( PFdX[ gx   ][ gy   ][ gz + 1 ] < TolHd ) && ( PFdY[ gx   ][ gy   ][ gz + 1 ] < TolHd ) && ( PFdZ[ gx   ][ gy   ][ gz + 1 ] < TolHd );
-
-                    if (b1 || b2 || b3 || b4 || b5 || b6) {
+                    b1 = ( PFdX1[ g1 - 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX2[ g1 - 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX3[ g1 - 1 ][ g2   ][ g3   ] < TolHd ) ;
+                    b2 = ( PFdX1[ g1 + 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX2[ g1 + 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX3[ g1 + 1 ][ g2   ][ g3   ] < TolHd ) ;
+                    b3 = ( PFdX1[ g1   ][ g2 - 1 ][ g3   ] < TolHd ) && ( PFdX2[ g1   ][ g2 - 1 ][ g3   ] < TolHd ) && ( PFdX3[ g1   ][ g2 - 1 ][ g3   ] < TolHd ) ;
+                    b4 = ( PFdX1[ g1   ][ g2 + 1 ][ g3   ] < TolHd ) && ( PFdX2[ g1   ][ g2 + 1 ][ g3   ] < TolHd ) && ( PFdX3[ g1   ][ g2 + 1 ][ g3   ] < TolHd ) ;
+                    b5 = ( PFdX1[ g1   ][ g2   ][ g3 - 1 ] < TolHd ) && ( PFdX2[ g1   ][ g2   ][ g3 - 1 ] < TolHd ) && ( PFdX3[ g1   ][ g2   ][ g3 - 1 ] < TolHd ) ;
+                    b6 = ( PFdX1[ g1   ][ g2   ][ g3 + 1 ] < TolHd ) && ( PFdX2[ g1   ][ g2   ][ g3 + 1 ] < TolHd ) && ( PFdX3[ g1   ][ g2   ][ g3 + 1 ] < TolHd ) ;
+             
+                    if ( b1 || b2 || b3 || b4 || b5 || b6 ) {
 
                         tmpVec.push_back(TA[i]);  
                     }
@@ -1501,40 +1430,38 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-3 TB) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-3 TB) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TA expansion
-            #pragma omp parallel for reduction(merge: tmpVec) private(grid, gx, gy, gz)                 
+            #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)                 
             for (int i = 0; i < TA.size(); i++)
             {
-                grid = IdxToGrid(TA[i]);
-                gx = grid[0];
-                gy = grid[1];
-                gz = grid[2];
+                g3 = TA[i] % M2;
+                g2 = (TA[i] % M1) / M2;
+                g1 = TA[i] / M1;
 
-				if (gx + 1 != BoxShape[0] - 1)
-                	tmpVec.push_back(GridToIdx(gx + 1, gy  , gz  ));
+		        if (g1 + 1 != BoxShape[0] - 1)
+                    tmpVec.push_back(GridToIdx(g1 + 1, g2, g3 ));
 
-				if (gx - 1 != 0)
-                	tmpVec.push_back(GridToIdx(gx - 1, gy  , gz  ));
+		        if (g1 - 1 != 0)
+                    tmpVec.push_back(GridToIdx(g1 - 1, g2, g3 ));
 
-				if (gy + 1 != BoxShape[1] - 1)
-                	tmpVec.push_back(GridToIdx(gx  , gy + 1, gz  ));
+		        if (g2 + 1 != BoxShape[1] - 1)
+                    tmpVec.push_back(GridToIdx(g1, g2 + 1, g3 ));
 
-				if (gy - 1 != 0)
-                	tmpVec.push_back(GridToIdx(gx  , gy - 1, gz  ));
+		        if (g2 - 1 != 0)
+                    tmpVec.push_back(GridToIdx(g1, g2 - 1, g3 ));
 
-				if (gz + 1 != BoxShape[2] - 1)
-                	tmpVec.push_back(GridToIdx(gx  , gy  , gz + 1));
+		        if (g3 + 1 != BoxShape[2] - 1)
+                    tmpVec.push_back(GridToIdx(g1, g2, g3 + 1 ));
 
-				if (gz - 1 != 0)
-                	tmpVec.push_back(GridToIdx(gx  , gy  , gz - 1));            
+		        if (g3 - 1 != 0)
+                    tmpVec.push_back(GridToIdx(g1, g2, g3 - 1 )); 
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-4-1 push_back) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-4-1 push_back) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // Combine TA and tmpVec
@@ -1544,7 +1471,7 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-4-2 combine) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-4-2 combine) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // Find unique elements
@@ -1552,33 +1479,31 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             it = std::unique (TA.begin(), TA.end()); 
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             TA.resize(std::distance(TA.begin(),it));
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
+            log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
             
-			#pragma omp parallel for
+	        #pragma omp parallel for
+            for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
 
-            for (int i = 1; i < BoxShape[0] - 1 ; i ++)  {
+                for (int i2 = 1; i2 < BoxShape[1]  - 1; i2 ++)  {
 
-                for (int j = 1; j < BoxShape[1]  - 1; j ++)  {
+                    for (int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
 
-                    for (int k = 1; k < BoxShape[2] - 1 ; k++)  {
-
-						PF[i][j][k] = std::abs( F[i][j][k] * std::conj(F[i][j][k]) );
-
+			            PF[i1][i2][i3] = std::abs( F[i1][i2][i3] * std::conj(F[i1][i2][i3]) );
                     }
                 }
             }
@@ -1586,45 +1511,65 @@ void Scatter3d::Evolve()
 
         if ( (tt + 1) % PERIOD == 0 )
         {
-			// Compute transmittance
-
-            t_1_begin = omp_get_wtime();
-
+            //
+            // REPORT MEASUREMENTS
+            // ----------------------------------------------------------------------------
+			// Compute Transmittance
+            // ----------------------------------------------------------------------------
+            /*t_1_begin = omp_get_wtime();
             pftrans = 0.0;
 
             #pragma omp parallel for reduction (+:pftrans)
+            for (int i1 = idx_x0; i1 < BoxShape[0]; i1 ++)  {
 
-            for (int i = idx_x0; i < BoxShape[0]; i ++)  {
+                for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
 
-                for (int j = 0; j < BoxShape[1]; j ++)  {
+                    for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
-                    for (int k = 0; k < BoxShape[2]; k++)  {
-
-                        pftrans+=PF[i][j][k];
+                        pftrans+=PF[i1][i2][i3];
                     }
                 }
             }
             pftrans *= H[0] * H[1] * H[2];
-
             PF_trans.push_back(pftrans);
-
-            log->log("[Scatter3d] Time %lf, Trans = %e\n", ( tt + 1 ) * kk, pftrans);
-
             t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
+            t_1_elapsed = t_1_end - t_1_begin;*/
             //log->log("Elapsed time (omp-e-2 trans) = %lf sec\n", t_1_elapsed); 
 
+            // ----------------------------------------------------------------------------
+            // Compute auto-correlation function
+            // ----------------------------------------------------------------------------
+
+            norm = 0.0;
+
+	        #pragma omp parallel for reduction (+:norm)
+            for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+
+            	for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+
+                    for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+
+                	    norm += std::real(F0_STAR[i1][i2][i3] * FF[i1][i2][i3]);
+		            }
+		        }
+	        }
+            norm *= H[0] * H[1] * H[2];
+
+            log->log("[Scatter3d] Step: %d, Time = %f ACF = %.16e \n", tt + 1, kk * (tt + 1), norm);
+
+             // ----------------------------------------------------------------------------
+             
             t_0_end = omp_get_wtime();
             t_0_elapsed = t_0_end - t_0_begin;
  
             log->log("[Scatter3d] Step: %d, Elapsed time: %lf sec\n", tt + 1, t_0_elapsed);
 
-			if (!isFullGrid)  {
+	        if (!isFullGrid)  {
 
-            	log->log("[Scatter3d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
+                log->log("[Scatter3d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
             	log->log("[Scatter3d] TA / total grids = %lf\n", ( TA.size() * 1.0 ) / GRIDS_TOT);
-			}
-        	log->log("\n........................................................\n\n");
+	        }
+            log->log("\n........................................................\n\n");
         }           
 
     } // Time iteration 
@@ -1633,36 +1578,49 @@ void Scatter3d::Evolve()
 }
 /* ------------------------------------------------------------------------------- */
 
-inline std::complex<double> Scatter3d::Wavefunction(double x, double y, double z)
+inline std::complex<double> Scatter3d::Wavefunction_MO(double x1, double x2, double x3)
 {
-    return exp( -A[0] * pow(x - Wave0[0], 2) + I / hb * P[0] * (x - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (y - r0)) - Ld * exp(-Da * (y - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (z - r0)) - Ld * exp(-Da * (z - r0)));
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0)));
 }
 
 /* ------------------------------------------------------------------------------- */
 
-inline double Scatter3d::Potential(double x, double y, double z)
+inline std::complex<double> Scatter3d::Wavefunction_HH(double x1, double x2, double x3)
 {
-    return V0 * pow(cosh(alpha * x), -2.0) + De * pow(1.0 - exp( - Da * ( y - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( z - r0 )), 2.0) - De;
+    return pow(PI_INV, 0.25 * DIMENSIONS) * exp( - 0.5 * ( (x1 - 2.0) * (x1 - 2.0) + (x2 - 2.0) * (x2 - 2.0) + (x3 - 2.0) * (x3 - 2.0) ) );
+}
+
+/* ------------------------------------------------------------------------------- */
+inline double Scatter3d::Potential_MO(double x1, double x2, double x3)
+{
+    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De;
 }
 
 /* ------------------------------------------------------------------------------- */
 
-Vector3i Scatter3d::IdxToGrid(int idx)
-{
-    int z = idx % BoxShape[2];
-    int y = (idx % (BoxShape[1] * BoxShape[2]))/ BoxShape[2];
-    int x = idx / (BoxShape[1] * BoxShape[2]);
+inline double Scatter3d::Potential_HH(double x1, double x2, double x3)
+{     
+    return 0.5 * (x1 * x1 + x2 * x2 + x3 * x3) + lambda * (x1 * x1 * x2 + x2 * x2 * x3 - (x2 * x2 * x2 + x3 * x3 * x3) / 3.0);
+}
+/* ------------------------------------------------------------------------------- */
 
-    Vector3i grid;
-    grid << x, y, z;
+VectorXi Scatter3d::IdxToGrid(int idx)
+{
+    int x3 = idx % M2;
+    int x2 = (idx % M1) / M2;
+    int x1 = idx / M1;
+
+    VectorXi grid;
+    grid.resize(DIMENSIONS);
+    grid << x1, x2, x3;
 
     return grid;
 }
 /* ------------------------------------------------------------------------------- */
 
-inline int Scatter3d::GridToIdx(int x, int y, int z)
+inline int Scatter3d::GridToIdx(int x1, int x2, int x3)
 {
-    return x * BoxShape[1] * BoxShape[2] + y * BoxShape[2] + z;
+    return x1 * M1 + x2 * M2 + x3;
 }
 /* ------------------------------------------------------------------------------- */
 
@@ -1670,51 +1628,58 @@ inline void Scatter3d::DefineBoundary()
 {
     // Find elements of DBi and DBi2
 
-    for (int j = 0; j < BoxShape[1]; j++)  {
-        for (int k = 0; k < BoxShape[2]; k++)  {
+    // i1 
+    for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
 
-            DBi.push_back(GridToIdx(0,j,k));
-            DBi.push_back(GridToIdx(BoxShape[0]-1,j,k));
+        for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
-            DBi2.push_back(GridToIdx(0,j,k));
-            DBi2.push_back(GridToIdx(1,j,k));
-            DBi2.push_back(GridToIdx(2,j,k));
-            DBi2.push_back(GridToIdx(BoxShape[0]-1,j,k));
-            DBi2.push_back(GridToIdx(BoxShape[0]-2,j,k));
-            DBi2.push_back(GridToIdx(BoxShape[0]-3,j,k));
+            DBi.push_back(GridToIdx(0, i2, i3));
+            DBi.push_back(GridToIdx(BoxShape[0]-1, i2, i3));
+
+            DBi2.push_back(GridToIdx(0, i2, i3));
+            DBi2.push_back(GridToIdx(1, i2, i3));
+            DBi2.push_back(GridToIdx(2, i2, i3));
+            DBi2.push_back(GridToIdx(BoxShape[0]-1, i2, i3));
+            DBi2.push_back(GridToIdx(BoxShape[0]-2, i2, i3));
+            DBi2.push_back(GridToIdx(BoxShape[0]-3, i2, i3));
         }
     }
 
-    for (int i = 0; i < BoxShape[0]; i++)  {
-        for (int k = 0; k < BoxShape[2]; k++)  {
+    // i2
 
-            DBi.push_back(GridToIdx(i,0,k));
-            DBi.push_back(GridToIdx(i,BoxShape[1]-1,k));
+    for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
-            DBi2.push_back(GridToIdx(i,0,k));
-            DBi2.push_back(GridToIdx(i,1,k));
-            DBi2.push_back(GridToIdx(i,2,k));
-            DBi2.push_back(GridToIdx(i,BoxShape[1]-1,k));
-            DBi2.push_back(GridToIdx(i,BoxShape[1]-2,k));
-            DBi2.push_back(GridToIdx(i,BoxShape[1]-3,k));
+        for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+
+            DBi.push_back(GridToIdx(i1, 0, i3));
+            DBi.push_back(GridToIdx(i1, BoxShape[1]-1, i3));
+
+            DBi2.push_back(GridToIdx(i1, 0, i3));
+            DBi2.push_back(GridToIdx(i1, 1, i3));
+            DBi2.push_back(GridToIdx(i1, 2, i3));
+            DBi2.push_back(GridToIdx(i1, BoxShape[1]-1, i3));
+            DBi2.push_back(GridToIdx(i1, BoxShape[1]-2, i3));
+            DBi2.push_back(GridToIdx(i1, BoxShape[1]-3, i3));
         }
-    }  
+    }
 
-    for (int i = 0; i < BoxShape[0]; i++)  {
-        for (int j = 0; j < BoxShape[1]; j++)  {
+    // i3
 
-            DBi.push_back(GridToIdx(i,j,0));
-            DBi.push_back(GridToIdx(i,j,BoxShape[2]-1));
+    for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
 
-            DBi2.push_back(GridToIdx(i,j,0));
-            DBi2.push_back(GridToIdx(i,j,1));
-            DBi2.push_back(GridToIdx(i,j,2));
-            DBi2.push_back(GridToIdx(i,j,BoxShape[2]-1));
-            DBi2.push_back(GridToIdx(i,j,BoxShape[2]-2));
-            DBi2.push_back(GridToIdx(i,j,BoxShape[2]-3));
+        for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+
+            DBi.push_back(GridToIdx(i1, i2, 0));
+            DBi.push_back(GridToIdx(i1, i2, BoxShape[2]-1));
+
+            DBi2.push_back(GridToIdx(i1, i2, 0));
+            DBi2.push_back(GridToIdx(i1, i2, 1));
+            DBi2.push_back(GridToIdx(i1, i2, 2));
+            DBi2.push_back(GridToIdx(i1, i2, BoxShape[2]-1));
+            DBi2.push_back(GridToIdx(i1, i2, BoxShape[2]-2));
+            DBi2.push_back(GridToIdx(i1, i2, BoxShape[2]-3));
         }
-    }  
-
+    }
     // Find unique elements
 
     std::vector<int>::iterator it;

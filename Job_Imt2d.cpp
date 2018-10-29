@@ -26,24 +26,24 @@ using namespace QTR_NS;
 
 JobImt2d::JobImt2d(class QTR *q)
 {
-        qtr = q;
-        log = qtr->log;
-        parameters = qtr->parameters;
-        imt = new Imt2d(qtr);
+    qtr = q;
+    log = qtr->log;
+    parameters = qtr->parameters;
+    imt = new Imt2d(qtr);
 }
 /* ------------------------------------------------------------------------------- */
 
 JobImt2d::~JobImt2d()
 {
-        delete imt;
+    delete imt;
 }
 
 /* ------------------------------------------------------------------------------- */
 
 void JobImt2d::run(class QTR *qtr)
-{       
-        imt->Evolve();
-        log->log("[Job_Imt2d] Done! \n"); 
+{     
+    imt->Evolve();
+    log->log("[Job_Imt2d] Done! \n"); 
 }
 /* ------------------------------------------------------------------------------- */
 

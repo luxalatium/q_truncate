@@ -1,9 +1,9 @@
 // ==============================================================================
 //
-//  Scatter3d.h
+//  Scatter2d.h
 //  QTR
 //
-//  Created by Albert Lu on 8/6/18.
+//  Created by Albert Lu on 10/27/18.
 //  alu@tacc.utexas.edu
 //
 //  Last modified on 10/27/18
@@ -12,8 +12,8 @@
 //
 // ==============================================================================
 
-#ifndef QTR_SCATTER3D_H
-#define QTR_SCATTER3D_H
+#ifndef QTR_SCATTER2D_H
+#define QTR_SCATTER2D_H
 
 #include <complex>
 
@@ -23,20 +23,20 @@
 
 namespace QTR_NS {
     
-    class Scatter3d {
+    class Scatter2d {
         
     public:
-        Scatter3d(class QTR *q);
-        ~Scatter3d();
+        Scatter2d(class QTR *q);
+        ~Scatter2d();
   
         void                          Evolve();
         VectorXi                      IdxToGrid(int idx);
-        inline int                    GridToIdx(int x1, int x2, int x3);
-        inline std::complex<double>   Wavefunction_MO(double x1, double x2, double x3);
-        inline std::complex<double>   Wavefunction_HH(double x1, double x2, double x3);
+        inline int                    GridToIdx(int x1, int x2);
+        inline std::complex<double>   Wavefunction_MO(double x1, double x2);
+        inline std::complex<double>   Wavefunction_HH(double x1, double x2);
         inline void                   DefineBoundary();
-        inline double                 Potential_MO(double x1, double x2, double x3);
-        inline double                 Potential_HH(double x1, double x2, double x3);
+        inline double                 Potential_MO(double x1, double x2);
+        inline double                 Potential_HH(double x1, double x2);
         
     private:
 
@@ -66,7 +66,6 @@ namespace QTR_NS {
         VectorXd        Box;
         VectorXi        BoxShape;
         int             M1;
-        int             M2;
 
         // Potential parameters
         int             idx_x0;
@@ -115,4 +114,4 @@ namespace QTR_NS {
     };
 }
 
-#endif /* QTR_SCATTER3D_H */
+#endif /* QTR_SCATTER2D_H */

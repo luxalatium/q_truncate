@@ -23,19 +23,19 @@
 
 namespace QTR_NS {
 
-        class Log : protected Pointers  {
-                
-        public:
-                
-                Log(class QTR *);
-                ~Log();
-                
-                void log_init(class QTR *, char *filename);
-                void log_close();
-                void log(const char* format, ...);
-                void log_file(const char* format, ...);
-        };
+    class Log : protected Pointers  {
         
+    public:
+        
+        Log(class QTR *);
+        ~Log();
+        
+        void log_init(class QTR *, char *filename);
+        void log_close();
+        void log(const char* format, ...);
+        void log_file(const char* format, ...);
+    };
+    
 }
 
 #endif /* QTR_LOG_H */

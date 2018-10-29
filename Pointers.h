@@ -19,27 +19,27 @@
 
 namespace QTR_NS {
 
-        class Pointers {
-                
-        public:
-                
-                Pointers(QTR *ptr):
-                qtr(ptr),
-                error(ptr->error),
-                log(ptr->log),
-                parameters(ptr->parameters),
-                randnum(ptr->randnum) {}
-                
-                virtual ~Pointers() {}
-                
-        protected:
-                
-                QTR        *qtr;
-                Error      *&error;
-                Log        *&log;
-                Parameters *&parameters;
-                RandNum    *&randnum;
-        };
+    class Pointers {
+        
+    public:
+        
+        Pointers(QTR *ptr):
+        qtr(ptr),
+        error(ptr->error),
+        log(ptr->log),
+        parameters(ptr->parameters),
+        randnum(ptr->randnum) {}
+        
+        virtual ~Pointers() {}
+        
+    protected:
+        
+        QTR    *qtr;
+        Error    *&error;
+        Log    *&log;
+        Parameters *&parameters;
+        RandNum  *&randnum;
+    };
 
 }
 

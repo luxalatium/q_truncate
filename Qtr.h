@@ -24,32 +24,32 @@
 
 namespace QTR_NS  {
 
-        class QTR {
-                
-        public:
-                
+    class QTR {
+        
+    public:
+        
 # ifdef QTRMPI
-                QTR(MPI_Comm communicator, char **arg);
-                MPI_Comm world;
+        QTR(MPI_Comm communicator, char **arg);
+        MPI_Comm world;
 # else
-                QTR(char **arg);
+        QTR(char **arg);
 # endif
-                
-                ~QTR();
-                
-                void run();
         
-                class Error            *error;
-                class Job              *job;
-                class Log              *log;
-                class Parameters       *parameters;
-                class RandNum          *randnum;
-                
-        private:
-                
-                char *inFilePtr;
-        };
+        ~QTR();
         
+        void run();
+    
+        class Error      *error;
+        class Job        *job;
+        class Log        *log;
+        class Parameters     *parameters;
+        class RandNum      *randnum;
+        
+    private:
+        
+        char *inFilePtr;
+    };
+    
 }
 
 #endif /* QTR_QTR_H */

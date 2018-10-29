@@ -25,8 +25,8 @@ using namespace QTR_NS;
 
 JobTest::JobTest(class QTR *qtr)
 {
-        log = qtr->log;
-        parameters = qtr->parameters;
+    log = qtr->log;
+    parameters = qtr->parameters;
 }
 /* ------------------------------------------------------------------------------- */
 
@@ -35,8 +35,8 @@ JobTest::~JobTest(){ }
 /* ------------------------------------------------------------------------------- */
 
 void JobTest::run(class QTR *qtr)
-{       
-        log->log("[Job_Test] test done - %d.", 1);
+{     
+    log->log("[Job_Test] test done - %d.", 1);
 }
 /* ------------------------------------------------------------------------------- */
 
