@@ -1065,7 +1065,9 @@ void Imt3d::Evolve()
 
             // PFdX
 
-            coeff = 1.0 / (2.0 * H[0]);
+            coeff1 = 1.0 / (2.0 * H[0]);
+            coeff2 = 1.0 / (2.0 * H[1]);
+            coeff3 = 1.0 / (2.0 * H[2]);
 
             #pragma omp parallel for
             for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {

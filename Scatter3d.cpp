@@ -1085,7 +1085,7 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            lif (!QUIET) og->log("Elapsed time (omp-kk-12: CASE 2 KK2) = %lf sec\n", t_1_elapsed);
+            if (!QUIET) log->log("Elapsed time (omp-kk-12: CASE 2 KK2) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)

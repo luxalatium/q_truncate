@@ -29,7 +29,7 @@ const char Job::TEST[] = "test";
 const char Job::IMT2D[] = "imt2d";
 const char Job::IMT3D[] = "imt3d";
 const char Job::IMT4D[] = "imt4d";
-const char Job::SCATTER3D[] = "scatter2d";
+const char Job::SCATTER2D[] = "scatter2d";
 const char Job::SCATTER3D[] = "scatter3d";
 const char Job::SCATTER4D[] = "scatter4d";
 
