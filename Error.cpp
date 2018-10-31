@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 8/4/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 8/4/18
+//  Last modified on 10/31/18
 //
 //  Note:
 //
@@ -43,7 +43,6 @@ void Error::abort_all()
 {
     
 #ifdef QTRMPI
-    
     log->log("[Error] QTR aborting ...");
     MPI_Abort(qtr->parameters->world, 1);
 #else

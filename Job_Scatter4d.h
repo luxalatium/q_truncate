@@ -25,7 +25,6 @@ namespace QTR_NS  {
     public:
         JobScatter4d(class QTR *);
         ~JobScatter4d(void);
-        
         void run(class QTR *);
         
     private:

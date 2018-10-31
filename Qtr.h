@@ -46,7 +46,6 @@ namespace QTR_NS  {
         class RandNum      *randnum;
         
     private:
-        
         char *inFilePtr;
     };
     

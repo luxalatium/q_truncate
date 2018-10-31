@@ -49,11 +49,12 @@ namespace QTR_NS {
         // General parameters
         std::complex<double>  I;      // sqrt(-1)
         std::complex<double>  xZERO;  // complex zero
-        int             DIMENSIONS;
-        int             PERIOD; 
-	    int             GRIDS_TOT;
-        double          TIME;   
-        double          PI_INV;  // 1/pi
+        int                   DIMENSIONS;
+        int                   PERIOD; 
+        int                   GRIDS_TOT;
+        bool                  QUIET;
+        double                TIME;   
+        double                PI_INV;  // 1/pi
 
         // Grid size
         double          kk;    // time resolution

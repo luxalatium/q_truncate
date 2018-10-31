@@ -29,7 +29,6 @@ namespace QTR_NS  {
         void run(class QTR *);
         
     private:
-        
         Log        *log;
         Parameters *parameters;
         QTR        *qtr;

@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 8/4/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/25/18
+//  Last modified on 10/31/18
 //
 //  Note:
 //
@@ -38,9 +38,9 @@ namespace QTR_NS   {
         int      load(FILE *file);
         
         // MAIN //
-        string     job;
-        string     inFilename;
-        string     logFilename;
+        string   job;
+        string   inFilename;
+        string   logFilename;
         bool     quiet;
         bool     writeLog;
         
@@ -96,7 +96,7 @@ namespace QTR_NS   {
         double     scxd_ExReduce;
         double     scxd_w;  // HO specific
         double     scxd_V0; // Eckart potential 
-	double     scxd_ek2v;
+        double     scxd_ek2v;
         double     scxd_alpha;          
         double     scxd_k0; // Related HO
         double     scxd_sig;        

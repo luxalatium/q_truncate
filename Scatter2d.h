@@ -51,7 +51,8 @@ namespace QTR_NS {
         std::complex<double>  xZERO;  // complex zero
         int             DIMENSIONS;
         int             PERIOD; 
-	    int             GRIDS_TOT;
+        int             GRIDS_TOT;
+        bool            QUIET;
         double          TIME;   
         double          PI_INV;  // 1/pi
 

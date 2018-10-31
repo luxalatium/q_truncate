@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 10/3/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/3/18
+//  Last modified on 10/30/18
 //
 //  Note:
 //
@@ -29,12 +29,12 @@ namespace QTR_NS {
         Imt3d(class QTR *q);
         ~Imt3d();
   
-        void              Evolve();
-        VectorXi            IdxToGrid(int idx);
-        inline int          GridToIdx(int x1, int x2, int x3);
+        void                          Evolve();
+        VectorXi                      IdxToGrid(int idx);
+        inline int                    GridToIdx(int x1, int x2, int x3);
         inline std::complex<double>   Wavefunction(double x1, double x2, double x3);
-        inline void           DefineBoundary();
-        inline double         Potential(double x1, double x2, double x3);
+        inline void                   DefineBoundary();
+        inline double                 Potential(double x1, double x2, double x3);
         
     private:
 
@@ -43,32 +43,31 @@ namespace QTR_NS {
         QTR           *qtr;
         Error         *err;
         Log           *log;
-        Parameters      *parameters;
+        Parameters    *parameters;
 
         // General parameters
         std::complex<double>  I;    // sqrt(-1)
         std::complex<double>  xZERO;  // complex zero
-        int           DIMENSIONS;
-        int           PERIOD; 
-		int           GRIDS_TOT;
-        double        TIME;   
+        int                   DIMENSIONS;
+        int                   PERIOD; 
+    int                       GRIDS_TOT;
+        bool                  QUIET;   
+        double                TIME;   
 
         // Grid size
         double        kk;  // time resolution
-        VectorXd        H;   // grid size
-        VectorXd        Hi;  // inverse grid size
-        VectorXd        Hisq;  // inverse grid size square     
-        VectorXd        S;  
+        VectorXd      H;   // grid size
+        VectorXd      Hi;  // inverse grid size
+        VectorXd      Hisq;  // inverse grid size square     
+        VectorXd      S;  
 
         // Domain size
-        VectorXd        Box;
-        VectorXi        BoxShape;
+        VectorXd      Box;
+        VectorXi      BoxShape;
         int           M1;
         int           M2;
 
-        // Potential parameters
-        //int           idx_x0;
-        //VectorXi        Vmode;        
+        // Potential parameters     
         double        hb;
         double        m;
         double        w;    // HO specific
@@ -87,9 +86,9 @@ namespace QTR_NS {
         double        Ld;
 
         // Wavefunction
-        VectorXd        Wave0;
-        VectorXd        A;
-        VectorXd        P;
+        VectorXd      Wave0;
+        VectorXd      A;
+        VectorXd      P;
 
         // Truncate parameters
         bool          isEmpty;

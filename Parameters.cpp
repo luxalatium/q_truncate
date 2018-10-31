@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 8/4/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/25/18
+//  Last modified on 10/31/18
 //
 //  Note:
 //
@@ -35,18 +35,18 @@ Parameters::Parameters() : Pointers(qtr)
     
     // MAIN //
     job               = "point";
-    inFilename          = "test.in";
-    logFilename           = "test.log";
+    inFilename        = "test.in";
+    logFilename       = "test.log";
     quiet             = false;
-    writeLog            = true;
+    writeLog          = true;
     
     // MPI //
-    me              = 0;
-    i               = 0;
+    me                = 0;
+    i                 = 0;
     
     // RANDOM //
-    rngSeed             = -1;
-    rngType             = "mars";
+    rngSeed           = -1;
+    rngType           = "mars";
 }
 /* ------------------------------------------------------------------------------- */
 
@@ -96,7 +96,7 @@ int Parameters::load(FILE *file){
     {
         // MAIN //
         job         = toLowerCase(ini.GetValue("MAIN", "job"));
-	inFilename  = ini.GetValue ("MAIN", "in_filename" , inFilename);
+        inFilename  = ini.GetValue ("MAIN", "in_filename" , inFilename);
         logFilename = ini.GetValue ("MAIN", "log_filename", logFilename);
         quiet       = ini.GetValueB("MAIN", "quiet", quiet);
         writeLog    = ini.GetValueB("MAIN", "write_log", writeLog);
@@ -141,14 +141,14 @@ int Parameters::load(FILE *file){
         scxd_Vmode_2  = ini.GetValueI("SCATTERXD", "Vmode_2", 0);
         scxd_Vmode_3  = ini.GetValueI("SCATTERXD", "Vmode_3", 0);
         scxd_Vmode_4  = ini.GetValueI("SCATTERXD", "Vmode_4", 0);
-        scxd_w        = ini.GetValueF("SCATTERXD", "w", 1.0);  // HO specific
+        scxd_w        = ini.GetValueF("SCATTERXD", "w", 1.0);    // HO specific
         scxd_V0       = ini.GetValueF("SCATTERXD", "V0",   1.0); // Eckart potential 
         scxd_ek2v     = ini.GetValueF("SCATTERXD", "ek2v", 1.0); 
         scxd_alpha    = ini.GetValueF("SCATTERXD", "Alpha", 0.4);           
-        scxd_k0     = ini.GetValueF("SCATTERXD", "k0",  0.09); // Related HO
+        scxd_k0     = ini.GetValueF("SCATTERXD", "k0",  0.09);   // Related HO
         scxd_sig    = ini.GetValueF("SCATTERXD", "sig", 0.1);        
         scxd_lan    = ini.GetValueF("SCATTERXD", "lan", 1.0);          
-        scxd_De     = ini.GetValueF("SCATTERXD", "De", 40.0);  // Morse
+        scxd_De     = ini.GetValueF("SCATTERXD", "De", 40.0);    // Morse
         scxd_Da     = ini.GetValueF("SCATTERXD", "Da", 0.25);        
         scxd_r0     = ini.GetValueF("SCATTERXD", "r0", 0.0); 
         scxd_lambda = ini.GetValueF("SCATTERXD", "lambda", 0.11803);  // Henon-Heiles                   
@@ -156,7 +156,7 @@ int Parameters::load(FILE *file){
         // RANDOM //
         rngSeed     = ini.GetValueL("RANDOM", "random_seed" , rngSeed);
         rngType     = ini.GetValue ("RANDOM", "random_type" , rngType);
- }
+    }
     else
     {
         fprintf(stderr, "Couldn't parse the ini file.\n");

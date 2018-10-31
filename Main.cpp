@@ -49,13 +49,13 @@ int main(int narg, char **arg)
 
 # else
     qtr = new QTR(arg);
-# endif	
+# endif  
     
     qtr->run();
     
     delete qtr;
     
-# ifdef	QTRMPI
+# ifdef  QTRMPI
     MPI_Finalize();
 # endif
     

@@ -31,7 +31,7 @@
 
 // Boltzmann Constant
 // unit (J*K^-1)
-#define KB	 (1.3806488E-23)
+#define KB   (1.3806488E-23)
 // unit (eV*K^-1)
 #define KBEV (8.617332384960E-5)
 
