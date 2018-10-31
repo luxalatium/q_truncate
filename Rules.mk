@@ -3,8 +3,8 @@
 
 # QTR source code
 
-OBJECTS += Qtr.o Error.o Main.o Imt2d.o InputFile.o \
-Job.o Job_Imt2d.o Job_Test.o Job_Scatter2d.o Job_Scatter3d.o Job_Scatter4d.o Log.o Parameters.o RandNum.o Scatter2d.o Scatter3d.o Scatter4d.o
+OBJECTS += Qtr.o Error.o Main.o Imt2d.o Imt3d.o Imt4d.o InputFile.o \
+Job.o Job_Imt2d.o Job_Imt3d.o Job_Imt4d.o Job_Test.o Job_Scatter2d.o Job_Scatter3d.o Job_Scatter4d.o Log.o Parameters.o RandNum.o Scatter2d.o Scatter3d.o Scatter4d.o
 
 TEMPOBJ := $(OBJECTS)
 DEPOBJECTS := $(addprefix ../,$(TEMPOBJ))
