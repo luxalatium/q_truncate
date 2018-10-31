@@ -1646,28 +1646,28 @@ void Scatter4d::Evolve()
                 g3 = (TA[i] % M2) / M3;
                 g4 = TA[i] % M3;
 
-            if (g1 + 1 != BoxShape[0] - 1)
+                if (g1 + 1 != BoxShape[0] - 1)
                     tmpVec.push_back(GridToIdx(g1 + 1, g2, g3, g4 ));
 
-            if (g1 - 1 != 0)
+                if (g1 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1 - 1, g2, g3, g4 ));
 
-            if (g2 + 1 != BoxShape[1] - 1)
+                if (g2 + 1 != BoxShape[1] - 1)
                     tmpVec.push_back(GridToIdx(g1, g2 + 1, g3, g4 ));
 
-            if (g2 - 1 != 0)
+                if (g2 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1, g2 - 1, g3, g4 ));
 
-            if (g3 + 1 != BoxShape[2] - 1)
+                if (g3 + 1 != BoxShape[2] - 1)
                     tmpVec.push_back(GridToIdx(g1, g2, g3 + 1, g4 ));
 
-            if (g3 - 1 != 0)
+                if (g3 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1, g2, g3 - 1, g4 )); 
 
-            if (g4 + 1 != BoxShape[3] - 1)
+                if (g4 + 1 != BoxShape[3] - 1)
                     tmpVec.push_back(GridToIdx(g1, g2, g3, g4 + 1 ));
 
-            if (g4 - 1 != 0)
+                if (g4 - 1 != 0)
                     tmpVec.push_back(GridToIdx(g1, g2, g3, g4 - 1 ));            
             }
             t_1_end = omp_get_wtime();
@@ -1716,7 +1716,7 @@ void Scatter4d::Evolve()
 
                         for (int i4 = 1; i4 < BoxShape[3] - 1 ; i4 ++)  {
 
-                      PF[i1][i2][i3][i4] = std::abs( F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]));
+                            PF[i1][i2][i3][i4] = std::abs( F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]));
                         }
                     }
                 }
