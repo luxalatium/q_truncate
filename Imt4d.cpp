@@ -64,6 +64,7 @@ void Imt4d::init()
     PERIOD = parameters->scxd_period;
     TIME = parameters->scxd_Tf;
     QUIET = parameters->quiet;
+    TIMING = parameters->timing;
 
     // Grid size
     H.resize(DIMENSIONS);
@@ -553,7 +554,7 @@ void Imt4d::Evolve()
         }
         t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
-        if (!QUIET) log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
+        if (!QUIET && TIMING) log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
 
         // Check if TB of f is higher than TolL
         
@@ -591,7 +592,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
         }    
 
         isExtrapolate = false;
@@ -672,7 +673,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
 
             // .....................................................................
 
@@ -893,7 +894,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
 
             // ............................................................................................. Extrapolation
 
@@ -932,7 +933,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
      
             // Main iteration
             t_1_begin = omp_get_wtime();
@@ -960,7 +961,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-d-1: CASE 1 FF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-d-1: CASE 1 FF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
             
             #pragma omp parallel for private(g1, g2, g3, g4)
@@ -979,7 +980,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-d-2: CASE 1 PF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-d-2: CASE 1 PF) = %lf sec\n", t_1_elapsed);
 
             // check Multiple Expanding 
             // TBL = index of FF that FF(TBL) is higher than TolL
@@ -1031,7 +1032,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-d-3 CASE 1 TBL TBL_P) = %lf sec\n", t_1_elapsed); 
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-d-3 CASE 1 TBL TBL_P) = %lf sec\n", t_1_elapsed); 
         }
 
         // CASE 2: Truncating without extrapolation
@@ -1064,7 +1065,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-d-1 FF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-d-1 FF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
         }   
         else if ( !isExtrapolate && isFullGrid )
@@ -1103,7 +1104,7 @@ void Imt4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-d-1: CASE 3 FF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-d-1: CASE 3 FF) = %lf sec\n", t_1_elapsed);
         }
 
         t_1_begin = omp_get_wtime();
@@ -1162,7 +1163,7 @@ void Imt4d::Evolve()
 
         t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
-        if (!QUIET) log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
+        if (!QUIET && TIMING) log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
 
         // Truncated_New Edge
         if ( !isFullGrid )
@@ -1195,7 +1196,7 @@ void Imt4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-2 PF) = %lf sec\n", t_1_elapsed); 
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-2 PF) = %lf sec\n", t_1_elapsed); 
 
             // Truncate
 
@@ -1219,7 +1220,7 @@ void Imt4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-1 PF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-1 PF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TA
@@ -1244,7 +1245,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-2 TA) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-2 TA) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TB
@@ -1289,7 +1290,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-3 TB) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-3 TB) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TA expansion
@@ -1328,7 +1329,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-1 push_back) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-1 push_back) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // Combine TA and tmpVec
@@ -1338,7 +1339,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2 combine) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2 combine) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // Find unique elements
@@ -1346,21 +1347,21 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             it = std::unique (TA.begin(), TA.end()); 
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             TA.resize(std::distance(TA.begin(),it));
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
             
             #pragma omp parallel for
@@ -1412,7 +1413,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-f-1 resize) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-f-1 resize) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             norm = 0.0;
@@ -1435,7 +1436,7 @@ void Imt4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-f-2 resize) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-f-2 resize) = %lf sec\n", t_1_elapsed);
 
             energy /= norm;
             log->log("[Imt4d] Time %lf, <E> = %e, norm = %e\n", ( tt + 1 ) * kk, energy, norm);

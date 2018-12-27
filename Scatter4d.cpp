@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 9/9/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/27/18
+//  Last modified on 12/26/18
 //
 //  Note:
 //
@@ -66,6 +66,9 @@ void Scatter4d::init()
     PERIOD = parameters->scxd_period;
     TIME = parameters->scxd_Tf;
     QUIET = parameters->quiet;
+    TIMING = parameters->timing;
+    isTrans = parameters->scxd_isTrans;
+    isAcf = parameters->scxd_isAcf;
 
     // Grid size
     H.resize(DIMENSIONS);
@@ -159,6 +162,12 @@ void Scatter4d::init()
     // Potential: Henon-Heiles
     lambda = parameters->scxd_lambda;
 
+    // Potential: EckHO
+    sigma = parameters->scxd_sigma;
+
+    // Potential: GauHO
+    beta = parameters->scxd_beta;
+
     // Wavefunction parameters
     Wave0.resize(DIMENSIONS);
     Wave0[0] = parameters->scxd_x01;
@@ -237,7 +246,7 @@ void Scatter4d::Evolve()
 
     // Make DBi and DBi2
     if (isFullGrid)  {
-      DefineBoundary();
+        DefineBoundary();
     }
 
     log->log("[Scatter4d] Initializing containers ...\n");
@@ -322,7 +331,7 @@ void Scatter4d::Evolve()
 
                 for (unsigned int i4 = 1; i4 < BoxShape[3] - 1 ; i4 ++)  {
           
-                    F[i1][i2][i3][i4] = Wavefunction_HH(Box[0] + i1 * H[0], Box[2] + i2 * H[1], Box[4] + i3 * H[2], Box[6] + i4 * H[3]);
+                    F[i1][i2][i3][i4] = WAVEFUNCTION(Box[0] + i1 * H[0], Box[2] + i2 * H[1], Box[4] + i3 * H[2], Box[6] + i4 * H[3]);
                 }
             }
         }
@@ -341,7 +350,7 @@ void Scatter4d::Evolve()
 
                 for (unsigned int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
                 
-                norm += std::abs(F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]));
+                    norm += std::abs(F[i1][i2][i3][i4] * std::conj(F[i1][i2][i3][i4]));
                 }
             }
         }
@@ -594,7 +603,7 @@ void Scatter4d::Evolve()
         }
         t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
-        if (!QUIET) log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
+        if (!QUIET && TIMING) log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
 
         // Check if TB of f is higher than TolL
         
@@ -633,7 +642,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
         }    
 
         isExtrapolate = false;
@@ -722,7 +731,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
 
             // .....................................................................
 
@@ -747,10 +756,10 @@ void Scatter4d::Evolve()
 
                 if ( F[g1 - 1][g2][g3][g4] != xZERO )  {
 
-                if ( std::abs(F[g1 - 1][g2][g3][g4]) < val_min_abs &&  F[g1 - 2][g2][g3][g4] != xZERO )  {
-                      val_min_abs = std::abs(F[g1 - 1][g2][g3][g4]);
-                      val_min = F[g1 - 1][g2][g3][g4];
-                }
+                    if ( std::abs(F[g1 - 1][g2][g3][g4]) < val_min_abs &&  F[g1 - 2][g2][g3][g4] != xZERO )  {
+                        val_min_abs = std::abs(F[g1 - 1][g2][g3][g4]);
+                        val_min = F[g1 - 1][g2][g3][g4];
+                    }
 
                     if (F[g1 - 2][g2][g3][g4] != xZERO)  {
 
@@ -944,7 +953,7 @@ void Scatter4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
 
             // ............................................................................................. Extrapolation
 
@@ -983,7 +992,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
      
             // Runge–Kutta 4
             t_1_begin = omp_get_wtime();
@@ -1005,12 +1014,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( F[g1][g2 - 1][g3][g4] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2 + 1][g3][g4] ) 
                                   + Hisq[2] * ( F[g1][g2][g3 - 1][g4] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2][g3 + 1][g4] )
                                   + Hisq[3] * ( F[g1][g2][g3][g4 - 1] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2][g3][g4 + 1] )
-                               )  - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * F[g1][g2][g3][g4];
+                               )  - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * F[g1][g2][g3][g4];
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-1: CASE 1 KK1) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-1: CASE 1 KK1) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1030,12 +1039,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 0.5 * KK1[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 0.5 * KK1[g1][g2 + 1][g3][g4] ) )
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 0.5 * KK1[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 0.5 * KK1[g1][g2][g3 + 1][g4] ) )
                                   + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 0.5 * KK1[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 0.5 * KK1[g1][g2][g3][g4 + 1] ) )
-                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] );
+                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] );
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-2: CASE 1 KK2) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-2: CASE 1 KK2) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1055,12 +1064,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 0.5 * KK2[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 0.5 * KK2[g1][g2 + 1][g3][g4] ) )
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 0.5 * KK2[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 0.5 * KK2[g1][g2][g3 + 1][g4] ) )
                                   + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 0.5 * KK2[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 0.5 * KK2[g1][g2][g3][g4 + 1] ) )
-                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] );
+                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] );
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-3: CASE 1 KK3) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-3: CASE 1 KK3) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1080,12 +1089,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 1.0 * KK3[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 1.0 * KK3[g1][g2 + 1][g3][g4] ) )
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 1.0 * KK3[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 1.0 * KK3[g1][g2][g3 + 1][g4] ) )
                                   + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 1.0 * KK3[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 1.0 * KK3[g1][g2][g3][g4 + 1] ) )
-                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] );
+                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] );
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-4: CASE 1 KK4) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-4: CASE 1 KK4) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4)
@@ -1101,7 +1110,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-5: CASE 1 FF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-5: CASE 1 FF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
             
             #pragma omp parallel for private(g1, g2, g3, g4)
@@ -1120,7 +1129,7 @@ void Scatter4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-6: CASE 1 PF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-6: CASE 1 PF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // check Multiple Expanding 
@@ -1143,8 +1152,8 @@ void Scatter4d::Evolve()
                 b3 = PFdX2[g1][g2][g3][g4] >= TolHd;
                 b4 = PFdX3[g1][g2][g3][g4] >= TolHd;
                 b5 = PFdX4[g1][g2][g3][g4] >= TolHd;
-                b6 = g1 > 1 && g2 > 1 && g3 > 1 && g4 > 1;
-                b7 = g1 < BoxShape[0] - 2 && g2 < BoxShape[1] - 2 && g3 < BoxShape[2] - 2 && g4 < BoxShape[3] - 2;
+                b6 = g1 > 2 && g2 > 2 && g3 > 2 && g4 > 2;
+                b7 = g1 < BoxShape[0] - 3 && g2 < BoxShape[1] - 3 && g3 < BoxShape[2] - 3 && g4 < BoxShape[3] - 3;
 
                 if (  ( b1 || b2 || b3 || b4 || b5 ) && b6 && b7 )  {
                     tmpVec.push_back(ExFF[i]);
@@ -1173,7 +1182,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-c-3 CASE 1 TBL TBL_P) = %lf sec\n", t_1_elapsed); 
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-c-3 CASE 1 TBL TBL_P) = %lf sec\n", t_1_elapsed); 
         }
 
         // CASE 2: Truncating without extrapolation
@@ -1199,12 +1208,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( F[g1][g2 - 1][g3][g4] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2 + 1][g3][g4] ) 
                                   + Hisq[2] * ( F[g1][g2][g3 - 1][g4] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2][g3 + 1][g4] )
                                   + Hisq[3] * ( F[g1][g2][g3][g4 - 1] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2][g3][g4 + 1] )
-                               )  - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * F[g1][g2][g3][g4];
+                               )  - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * F[g1][g2][g3][g4];
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-11: CASE 2 KK1) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-11: CASE 2 KK1) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1224,12 +1233,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 0.5 * KK1[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 0.5 * KK1[g1][g2 + 1][g3][g4] ) )
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 0.5 * KK1[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 0.5 * KK1[g1][g2][g3 + 1][g4] ) )
                                   + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 0.5 * KK1[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 0.5 * KK1[g1][g2][g3][g4 + 1] ) )
-                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] );
+                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] );
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-12: CASE 2 KK2) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-12: CASE 2 KK2) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1249,12 +1258,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 0.5 * KK2[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 0.5 * KK2[g1][g2 + 1][g3][g4] ) )
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 0.5 * KK2[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 0.5 * KK2[g1][g2][g3 + 1][g4] ) )
                                   + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 0.5 * KK2[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 0.5 * KK2[g1][g2][g3][g4 + 1] ) )
-                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] );
+                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] );
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-13: CASE 2 KK3) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-13: CASE 2 KK3) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1274,12 +1283,12 @@ void Scatter4d::Evolve()
                                   + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 1.0 * KK3[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 1.0 * KK3[g1][g2 + 1][g3][g4] ) )
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 1.0 * KK3[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 1.0 * KK3[g1][g2][g3 + 1][g4] ) )
                                   + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 1.0 * KK3[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 1.0 * KK3[g1][g2][g3][g4 + 1] ) )
-                                ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] );
+                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] );
             }
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-14: CASE 2 KK4) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-14: CASE 2 KK4) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4)
@@ -1295,7 +1304,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-15: CASE 2 FF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-15: CASE 2 FF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
         }   
         else if ( !isExtrapolate && isFullGrid )
@@ -1326,7 +1335,7 @@ void Scatter4d::Evolve()
                                               + Hisq[1] * ( F[g1][g2 - 1][g3][g4] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2 + 1][g3][g4] ) 
                                               + Hisq[2] * ( F[g1][g2][g3 - 1][g4] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2][g3 + 1][g4] )
                                               + Hisq[3] * ( F[g1][g2][g3][g4 - 1] - 2.0 * F[g1][g2][g3][g4] + F[g1][g2][g3][g4 + 1] )
-                                            )  - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * F[g1][g2][g3][g4];
+                                            )  - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * F[g1][g2][g3][g4];
                         }
                     }
                 }
@@ -1334,7 +1343,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-21: CASE 3 KK1) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-21: CASE 3 KK1) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1359,7 +1368,7 @@ void Scatter4d::Evolve()
                                               + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 0.5 * KK1[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 0.5 * KK1[g1][g2 + 1][g3][g4] ) )
                                               + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 0.5 * KK1[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 0.5 * KK1[g1][g2][g3 + 1][g4] ) )
                                               + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 0.5 * KK1[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 0.5 * KK1[g1][g2][g3][g4 + 1] ) )
-                                             ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] );
+                                             ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK1[g1][g2][g3][g4] );
                         }
                     }
                 }
@@ -1367,7 +1376,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-22: CASE 3 KK2) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-22: CASE 3 KK2) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1392,7 +1401,7 @@ void Scatter4d::Evolve()
                                               + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 0.5 * KK2[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 0.5 * KK2[g1][g2 + 1][g3][g4] ) )
                                               + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 0.5 * KK2[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 0.5 * KK2[g1][g2][g3 + 1][g4] ) )
                                               + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 0.5 * KK2[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 0.5 * KK2[g1][g2][g3][g4 + 1] ) )
-                                             ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] );
+                                             ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 0.5 * KK2[g1][g2][g3][g4] );
                         }
                     }
                 }
@@ -1400,7 +1409,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-23: CASE 3 KK3) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-23: CASE 3 KK3) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4, xx1, xx2, xx3, xx4)
@@ -1425,7 +1434,7 @@ void Scatter4d::Evolve()
                                               + Hisq[1] * ( ( F[g1][g2 - 1][g3][g4] + 1.0 * KK3[g1][g2 - 1][g3][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2 + 1][g3][g4] + 1.0 * KK3[g1][g2 + 1][g3][g4] ) )
                                               + Hisq[2] * ( ( F[g1][g2][g3 - 1][g4] + 1.0 * KK3[g1][g2][g3 - 1][g4] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2][g3 + 1][g4] + 1.0 * KK3[g1][g2][g3 + 1][g4] ) )
                                               + Hisq[3] * ( ( F[g1][g2][g3][g4 - 1] + 1.0 * KK3[g1][g2][g3][g4 - 1] ) - 2.0 * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] ) + ( F[g1][g2][g3][g4 + 1] + 1.0 * KK3[g1][g2][g3][g4 + 1] ) )
-                                             ) - I * k2hb * Potential_HH(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] );
+                                             ) - I * k2hb * POTENTIAL(xx1, xx2, xx3, xx4) * ( F[g1][g2][g3][g4] + 1.0 * KK3[g1][g2][g3][g4] );
                         }
                     }
                 }
@@ -1433,7 +1442,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-24: CASE 3 KK4) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-24: CASE 3 KK4) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             #pragma omp parallel for private(g1, g2, g3, g4)
@@ -1456,7 +1465,7 @@ void Scatter4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-kk-5: CASE 3 FF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-5: CASE 3 FF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();  
         }
 
@@ -1514,7 +1523,7 @@ void Scatter4d::Evolve()
         }     
         t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
-        if (!QUIET) log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
+        if (!QUIET && TIMING) log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
 
         // Truncated_New Edge
         if ( !isFullGrid )
@@ -1542,7 +1551,7 @@ void Scatter4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-2 PF) = %lf sec\n", t_1_elapsed); 
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-2 PF) = %lf sec\n", t_1_elapsed); 
 
             // Truncate
 
@@ -1566,7 +1575,7 @@ void Scatter4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-1 PF) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-1 PF) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TA
@@ -1590,7 +1599,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-2 TA) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-2 TA) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TB
@@ -1634,7 +1643,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-3 TB) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-3 TB) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // TA expansion
@@ -1672,7 +1681,7 @@ void Scatter4d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-1 push_back) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-1 push_back) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // Combine TA and tmpVec
@@ -1682,7 +1691,7 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2 combine) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2 combine) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             // Find unique elements
@@ -1690,21 +1699,21 @@ void Scatter4d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             it = std::unique (TA.begin(), TA.end()); 
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
 
             TA.resize(std::distance(TA.begin(),it));
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET) log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
             t_1_begin = omp_get_wtime();
             
             #pragma omp parallel for
@@ -1725,69 +1734,68 @@ void Scatter4d::Evolve()
 
         if ( (tt + 1) % PERIOD == 0 )
         {
-            //
             // REPORT MEASUREMENTS
+
             // ----------------------------------------------------------------------------
             // Compute Transmittance
             // ----------------------------------------------------------------------------
-            /*t_1_begin = omp_get_wtime();
-            pftrans = 0.0;
 
-            #pragma omp parallel for reduction (+:pftrans)
-            for (int i1 = idx_x0; i1 < BoxShape[0]; i1 ++)  {
+            if (isTrans)  {
 
-                for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                t_1_begin = omp_get_wtime();
+                pftrans = 0.0;
 
-                    for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
-
-                        for (int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
-
-                            pftrans+=PF[i1][i2][i3][i4];
+                #pragma omp parallel for reduction (+:pftrans)
+                for (int i1 = idx_x0; i1 < BoxShape[0]; i1 ++)  {
+                    for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                        for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+                            for (int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
+                                pftrans+=PF[i1][i2][i3][i4];
+                            }
                         }
                     }
                 }
+                pftrans *= H[0] * H[1] * H[2] * H[3];
+                PF_trans.push_back(pftrans);
+                log->log("[Scatter4d] Time %lf, Trans = %e\n", ( tt + 1 ) * kk, pftrans);
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-e-2 trans) = %lf sec\n", t_1_elapsed);
             }
-            pftrans *= H[0] * H[1] * H[2] * H[3];
-            PF_trans.push_back(pftrans);
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;*/
-            //log->log("Elapsed time (omp-e-2 trans) = %lf sec\n", t_1_elapsed); 
-
             // ----------------------------------------------------------------------------
             // Compute auto-correlation function
             // ----------------------------------------------------------------------------
 
-            norm = 0.0;
+            if (isAcf)  {
 
-            t_1_begin = omp_get_wtime();
-            #pragma omp parallel for reduction (+:norm)
-            for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+                norm = 0.0;
 
-              for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for reduction (+:norm)
+                for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+                    for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                        for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+                            for (int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
 
-                    for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
-
-                        for (int i4 = 0; i4 < BoxShape[3]; i4 ++)  {
-
-                          norm += std::real(F0_STAR[i1][i2][i3][i4] * FF[i1][i2][i3][i4]);
+                                norm += std::real(F0_STAR[i1][i2][i3][i4] * FF[i1][i2][i3][i4]);
+                            }
                         }
                     }
                 }
+                norm *= H[0] * H[1] * H[2] * H[3];
+                log->log("[Scatter4d] Step: %d, Time = %f ACF = %.16e \n", tt + 1, kk * (tt + 1), norm);
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-e-2 acf) = %lf sec\n", t_1_elapsed); 
             }
-            norm *= H[0] * H[1] * H[2] * H[3];
-            log->log("[Scatter4d] Step: %d, Time = %f ACF = %.16e \n", tt + 1, kk * (tt + 1), norm);
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            //log->log("Elapsed time (omp-e-2 acf) = %lf sec\n", t_1_elapsed); 
-
             // ----------------------------------------------------------------------------
              
             t_0_end = omp_get_wtime();
             t_0_elapsed = t_0_end - t_0_begin;
  
-            log->log("[Scatter4d] Step: %d, Elapsed time: %lf sec\n", tt + 1, t_0_elapsed);
+            if (!QUIET) log->log("[Scatter4d] Step: %d, Elapsed time: %lf sec\n", tt + 1, t_0_elapsed);
 
-            if (!isFullGrid)  {
+            if (!isFullGrid && !QUIET)  {
 
                 log->log("[Scatter4d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
                 log->log("[Scatter4d] TA / total grids = %lf\n", ( TA.size() * 1.0 ) / GRIDS_TOT);
@@ -1799,24 +1807,88 @@ void Scatter4d::Evolve()
 }
 /* ------------------------------------------------------------------------------- */
 
-inline std::complex<double> Scatter4d::Wavefunction_MO(double x1, double x2, double x3, double x4)
+// Wavefunction and Potential
+// Translational component (1): Eckart
+// Vibrational components (3): Morse
+
+inline std::complex<double> Scatter4d::WAVEFUNCTION(double x1, double x2, double x3, double x4)
 {
     return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x4 - r0)) - Ld * exp(-Da * (x4 - r0)));
 }
-
 /* ------------------------------------------------------------------------------- */
+
+inline double Scatter4d::POTENTIAL(double x1, double x2, double x3, double x4)
+{
+    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x4 - r0 )), 2.0) - De;
+}
+/* ------------------------------------------------------------------------------- */
+
+// Translational component (1): Eckart
+// Vibrational components (3): Morse
+
+inline std::complex<double> Scatter4d::Wavefunction_EckMO(double x1, double x2, double x3, double x4)
+{
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x4 - r0)) - Ld * exp(-Da * (x4 - r0)));
+}
+/* ------------------------------------------------------------------------------- */
+
+inline double Scatter4d::Potential_EckMO(double x1, double x2, double x3, double x4)
+{
+    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x4 - r0 )), 2.0) - De;
+}
+/* ------------------------------------------------------------------------------- */
+
+// Translational component (1): Gaussian
+// Vibrational components (3): Morse
+
+inline std::complex<double> Scatter4d::Wavefunction_GauMO(double x1, double x2, double x3, double x4)
+{
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x4 - r0)) - Ld * exp(-Da * (x4 - r0)));
+}
+/* ------------------------------------------------------------------------------- */
+
+inline double Scatter4d::Potential_GauMO(double x1, double x2, double x3, double x4)
+{
+    return V0 * exp(-beta * x1 * x1) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x4 - r0 )), 2.0) - De;
+}
+/* ------------------------------------------------------------------------------- */
+
+// Translational component (1): Eckart
+// Vibrational components (3): Harmonic
+
+inline std::complex<double> Scatter4d::Wavefunction_EckHO(double x1, double x2, double x3, double x4)
+{
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp(-A[1] * pow(x2 - Wave0[1], 2)) * exp(-A[2] * pow(x3 - Wave0[2], 2)) * exp(-A[3] * pow(x4 - Wave0[3], 2));
+}
+/* ------------------------------------------------------------------------------- */
+
+inline double Scatter4d::Potential_EckHO(double x1, double x2, double x3, double x4)
+{     
+   return V0 * pow(cosh(alpha * x1), -2.0) + 0.5 * k0 * (1.0 - sigma * exp(- lambda * x1 * x1)) * (x2 * x2 + x3 * x3 + x4 * x4);
+}
+/* ------------------------------------------------------------------------------- */
+
+// Translational component (1): Gaussian
+// Vibrational components (3): Harmonic
+
+inline std::complex<double> Scatter4d::Wavefunction_GauHO(double x1, double x2, double x3, double x4)
+{
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp(-A[1] * pow(x2 - Wave0[1], 2)) * exp(-A[2] * pow(x3 - Wave0[2], 2)) * exp(-A[3] * pow(x4 - Wave0[3], 2));
+}
+/* ------------------------------------------------------------------------------- */
+
+inline double Scatter4d::Potential_GauHO(double x1, double x2, double x3, double x4)
+{     
+   return V0 * exp(-beta * x1 * x1) + 0.5 * k0 * (1.0 - sigma * exp(- lambda * x1 * x1)) * (x2 * x2 + x3 * x3 + x4 * x4);
+}
+/* ------------------------------------------------------------------------------- */
+
+// Henon-Heiles Potential
 
 inline std::complex<double> Scatter4d::Wavefunction_HH(double x1, double x2, double x3, double x4)
 {
     return pow(PI_INV, 0.25 * DIMENSIONS) * exp( - 0.5 * ( (x1 - 2.0) * (x1 - 2.0) + (x2 - 2.0) * (x2 - 2.0) + (x3 - 2.0) * (x3 - 2.0) + (x4 - 2.0) * (x4 - 2.0) ) );
 }
-
-/* ------------------------------------------------------------------------------- */
-inline double Scatter4d::Potential_MO(double x1, double x2, double x3, double x4)
-{
-    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x4 - r0 )), 2.0) - De;
-}
-
 /* ------------------------------------------------------------------------------- */
 
 inline double Scatter4d::Potential_HH(double x1, double x2, double x3, double x4)

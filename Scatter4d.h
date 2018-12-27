@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 9/9/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/27/18
+//  Last modified on 12/26/18
 //
 //  Note:
 //
@@ -32,12 +32,20 @@ namespace QTR_NS {
         void                          Evolve();
         VectorXi                      IdxToGrid(int idx);
         inline int                    GridToIdx(int x1, int x2, int x3, int x4);
-        inline std::complex<double>   Wavefunction_MO(double x1, double x2, double x3, double x4);
+        inline std::complex<double>   WAVEFUNCTION(double x1, double x2, double x3, double x4);
+        inline std::complex<double>   Wavefunction_EckMO(double x1, double x2, double x3, double x4);
+        inline std::complex<double>   Wavefunction_EckHO(double x1, double x2, double x3, double x4);
+        inline std::complex<double>   Wavefunction_GauMO(double x1, double x2, double x3, double x4);
+        inline std::complex<double>   Wavefunction_GauHO(double x1, double x2, double x3, double x4);
         inline std::complex<double>   Wavefunction_HH(double x1, double x2, double x3, double x4);
         inline void                   DefineBoundary();
-        inline double                 Potential_MO(double x1, double x2, double x3, double x4);
+        inline double                 POTENTIAL(double x1, double x2, double x3, double x4);
+        inline double                 Potential_EckMO(double x1, double x2, double x3, double x4);
+        inline double                 Potential_EckHO(double x1, double x2, double x3, double x4);
+        inline double                 Potential_GauMO(double x1, double x2, double x3, double x4);
+        inline double                 Potential_GauHO(double x1, double x2, double x3, double x4);
         inline double                 Potential_HH(double x1, double x2, double x3, double x4);
-        
+
     private:
 
         void            init();
@@ -53,6 +61,7 @@ namespace QTR_NS {
         int                   PERIOD; 
         int                   GRIDS_TOT;
         bool                  QUIET;
+        bool                  TIMING;
         double                TIME;
         double                PI_INV;  // 1/pi
 
@@ -89,6 +98,8 @@ namespace QTR_NS {
         double          r0;
         double          Ld;
         double          lambda; // HH
+        double          sigma;  // EckHO
+        double          beta;   // GauHO
 
         // Wavefunction
         VectorXd        Wave0;
@@ -114,6 +125,10 @@ namespace QTR_NS {
         MeshIndex       DBi2;  // Extrapolation-restricted area
         MeshIndex       ExFF;
         MeshIndex       ExFF2;
+
+        // Output
+        bool            isTrans;
+        bool            isAcf;
     };
 }
 

@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 8/4/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/31/18
+//  Last modified on 12/26/18
 //
 //  Note:
 //
@@ -99,9 +99,12 @@ int Parameters::load(FILE *file){
         inFilename  = ini.GetValue ("MAIN", "in_filename" , inFilename);
         logFilename = ini.GetValue ("MAIN", "log_filename", logFilename);
         quiet       = ini.GetValueB("MAIN", "quiet", quiet);
+        timing      = ini.GetValueB("MAIN", "timing", timing);
         writeLog    = ini.GetValueB("MAIN", "write_log", writeLog);
         // SCATTERXD //
         scxd_isFullGrid = ini.GetValueB("SCATTERXD", "isFullGrid", 1);  
+        scxd_isTrans    = ini.GetValueB("SCATTERXD", "isTrans", 1);
+        scxd_isAcf      = ini.GetValueB("SCATTERXD", "isAcf", 1);;
         scxd_dimensions = ini.GetValueI("SCATTERXD", "dimensions", 3);  
         scxd_period = ini.GetValueI("SCATTERXD", "period", 100);
         scxd_k      = ini.GetValueF("SCATTERXD", "k", 0.001);
@@ -151,7 +154,9 @@ int Parameters::load(FILE *file){
         scxd_De     = ini.GetValueF("SCATTERXD", "De", 40.0);    // Morse
         scxd_Da     = ini.GetValueF("SCATTERXD", "Da", 0.25);        
         scxd_r0     = ini.GetValueF("SCATTERXD", "r0", 0.0); 
-        scxd_lambda = ini.GetValueF("SCATTERXD", "lambda", 0.11803);  // Henon-Heiles                   
+        scxd_lambda = ini.GetValueF("SCATTERXD", "lambda", 0.11803);  // Henon-Heiles
+        scxd_sigma  = ini.GetValueF("SCATTERXD", "sigma", 1.0);       // Seck
+        scxd_beta   = ini.GetValueF("SCATTERXD", "beta", 1.0);        // Gauk                   
        
         // RANDOM //
         rngSeed     = ini.GetValueL("RANDOM", "random_seed" , rngSeed);

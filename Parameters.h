@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 8/4/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 10/31/18
+//  Last modified on 12/26/18
 //
 //  Note:
 //
@@ -42,6 +42,7 @@ namespace QTR_NS   {
         string   inFilename;
         string   logFilename;
         bool     quiet;
+        bool     timing;
         bool     writeLog;
         
         // MPI //
@@ -56,6 +57,8 @@ namespace QTR_NS   {
         // SCATTERXD //
         int      scxd_dimensions;
         bool     scxd_isFullGrid;
+        bool     scxd_isTrans;
+        bool     scxd_isAcf;
         int      scxd_Vmode_1;
         int      scxd_Vmode_2;
         int      scxd_Vmode_3; 
@@ -105,6 +108,8 @@ namespace QTR_NS   {
         double     scxd_Da;
         double     scxd_r0;
         double     scxd_lambda; // Henon-Heiles
+        double     scxd_sigma;  // Scek
+        double     scxd_beta;   // Gauk
         
         // RANDOM //
         string     rngType;
