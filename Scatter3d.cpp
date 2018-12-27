@@ -38,6 +38,40 @@ using std::endl;
 
 /* ------------------------------------------------------------------------------- */
 
+// DEFINE POTENTIAL TYPE
+#if defined POT_ECKMO
+
+#define WAVEFUNCTION(x1,x2,x3) Wavefunction_EckMO(x1,x2,x3)
+#define POTENTIAL(x1,x2,x3) Potential_EckMO(x1,x2,x3)
+#define POTNAME "EckMO"
+
+#elif defined POT_ECKHO
+
+#define WAVEFUNCTION(x1,x2,x3) Wavefunction_EckHO(x1,x2,x3)
+#define POTENTIAL(x1,x2,x3) Potential_EckHO(x1,x2,x3)
+#define POTNAME "EckHO"
+
+#elif defined POT_GAUMO
+
+#define WAVEFUNCTION(x1,x2,x3) Wavefunction_GauMO(x1,x2,x3)
+#define POTENTIAL(x1,x2,x3) Potential_GauMO(x1,x2,x3)
+#define POTNAME "GauMO"
+
+#elif defined POT_GAUHO
+
+#define WAVEFUNCTION(x1,x2,x3) Wavefunction_GauHO(x1,x2,x3)
+#define POTENTIAL(x1,x2,x3) Potential_GauHO(x1,x2,x3)
+#define POTNAME "GauHO"
+
+#else
+
+#define WAVEFUNCTION(x1,x2,x3) Wavefunction_HH(x1,x2,x3)
+#define POTENTIAL(x1,x2,x3) Potential_HH(x1,x2,x3)
+#define POTNAME "HH"
+
+#endif
+/* ------------------------------------------------------------------------------- */
+
 Scatter3d::Scatter3d(class QTR *q)
 {
     qtr = q;
@@ -1588,22 +1622,6 @@ void Scatter3d::Evolve()
     } // Time iteration 
 
     log->log("[Scatter3d] Evolve done.\n");
-}
-/* ------------------------------------------------------------------------------- */
-
-// Wavefunction and Potential
-// Translational component (1): Eckart
-// Vibrational components (2): Morse
-
-inline std::complex<double> Scatter3d::WAVEFUNCTION(double x1, double x2, double x3)
-{
-    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0)));
-}
-/* ------------------------------------------------------------------------------- */
-
-inline double Scatter3d::POTENTIAL(double x1, double x2, double x3)
-{
-    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De;
 }
 /* ------------------------------------------------------------------------------- */
 

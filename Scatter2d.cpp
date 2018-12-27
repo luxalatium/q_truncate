@@ -38,6 +38,40 @@ using std::endl;
 
 /* ------------------------------------------------------------------------------- */
 
+// DEFINE POTENTIAL TYPE
+#if defined POT_ECKMO
+
+#define WAVEFUNCTION(x1,x2) Wavefunction_EckMO(x1,x2)
+#define POTENTIAL(x1,x2) Potential_EckMO(x1,x2)
+#define POTNAME "EckMO"
+
+#elif defined POT_ECKHO
+
+#define WAVEFUNCTION(x1,x2) Wavefunction_EckHO(x1,x2)
+#define POTENTIAL(x1,x2) Potential_EckHO(x1,x2)
+#define POTNAME "EckHO"
+
+#elif defined POT_GAUMO
+
+#define WAVEFUNCTION(x1,x2) Wavefunction_GauMO(x1,x2)
+#define POTENTIAL(x1,x2) Potential_GauMO(x1,x2)
+#define POTNAME "GauMO"
+
+#elif defined POT_GAUHO
+
+#define WAVEFUNCTION(x1,x2) Wavefunction_GauHO(x1,x2)
+#define POTENTIAL(x1,x2) Potential_GauHO(x1,x2)
+#define POTNAME "GauHO"
+
+#else
+
+#define WAVEFUNCTION(x1,x2) Wavefunction_HH(x1,x2)
+#define POTENTIAL(x1,x2) Potential_HH(x1,x2)
+#define POTNAME "HH"
+
+#endif
+/* ------------------------------------------------------------------------------- */
+
 Scatter2d::Scatter2d(class QTR *q)
 {
     qtr = q;
@@ -57,6 +91,7 @@ Scatter2d::~Scatter2d()
 void Scatter2d::init()
 {
     log->log("\n\n[Scatter2d] INIT starts ...\n");
+    log->log("\n\n[Scatter2d] Potential type: %s\n", POTNAME);
 
     // General parameters
     I = {0,1};         // sqrt(-1)
@@ -1384,22 +1419,6 @@ void Scatter2d::Evolve()
     } // Time iteration 
 
     log->log("[Scatter2d] Evolve done.\n");
-}
-/* ------------------------------------------------------------------------------- */
-
-// Wavefunction and Potential
-// Translational component (1): Eckart
-// Vibrational component (1): Morse
-
-inline std::complex<double> Scatter2d::WAVEFUNCTION(double x1, double x2)
-{
-    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0)));
-}
-/* ------------------------------------------------------------------------------- */
-
-inline double Scatter2d::POTENTIAL(double x1, double x2)
-{
-    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De;
 }
 /* ------------------------------------------------------------------------------- */
 

@@ -38,6 +38,40 @@ using std::endl;
 
 /* ------------------------------------------------------------------------------- */
 
+// DEFINE POTENTIAL TYPE
+#if defined POT_ECKMO
+
+#define WAVEFUNCTION(x1,x2,x3,x4) Wavefunction_EckMO(x1,x2,x3,x4)
+#define POTENTIAL(x1,x2,x3,x4) Potential_EckMO(x1,x2,x3,x4)
+#define POTNAME "EckMO"
+
+#elif defined POT_ECKHO
+
+#define WAVEFUNCTION(x1,x2,x3,x4) Wavefunction_EckHO(x1,x2,x3,x4)
+#define POTENTIAL(x1,x2,x3,x4) Potential_EckHO(x1,x2,x3,x4)
+#define POTNAME "EckHO"
+
+#elif defined POT_GAUMO
+
+#define WAVEFUNCTION(x1,x2,x3,x4) Wavefunction_GauMO(x1,x2,x3,x4)
+#define POTENTIAL(x1,x2,x3,x4) Potential_GauMO(x1,x2,x3,x4)
+#define POTNAME "GauMO"
+
+#elif defined POT_GAUHO
+
+#define WAVEFUNCTION(x1,x2,x3,x4) Wavefunction_GauHO(x1,x2,x3,x4)
+#define POTENTIAL(x1,x2,x3,x4) Potential_GauHO(x1,x2,x3,x4)
+#define POTNAME "GauHO"
+
+#else
+
+#define WAVEFUNCTION(x1,x2,x3,x4) Wavefunction_HH(x1,x2,x3,x4)
+#define POTENTIAL(x1,x2,x3,x4) Potential_HH(x1,x2,x3,x4)
+#define POTNAME "HH"
+
+#endif
+/* ------------------------------------------------------------------------------- */
+
 Scatter4d::Scatter4d(class QTR *q)
 {
     qtr = q;
@@ -1804,22 +1838,6 @@ void Scatter4d::Evolve()
         }           
     } // Time iteration 
     log->log("[Scatter4d] Evolve done.\n");
-}
-/* ------------------------------------------------------------------------------- */
-
-// Wavefunction and Potential
-// Translational component (1): Eckart
-// Vibrational components (3): Morse
-
-inline std::complex<double> Scatter4d::WAVEFUNCTION(double x1, double x2, double x3, double x4)
-{
-    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x4 - r0)) - Ld * exp(-Da * (x4 - r0)));
-}
-/* ------------------------------------------------------------------------------- */
-
-inline double Scatter4d::POTENTIAL(double x1, double x2, double x3, double x4)
-{
-    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x4 - r0 )), 2.0) - De;
 }
 /* ------------------------------------------------------------------------------- */
 
