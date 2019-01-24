@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 9/24/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 12/23/18
+//  Last modified on 10/30/18
 //
 //  Note:
 //
@@ -50,8 +50,7 @@ namespace QTR_NS {
         int                   DIMENSIONS;
         int                   PERIOD; 
         int                   GRIDS_TOT;
-        bool                  QUIET;
-        bool                  TIMING;    
+        bool                  QUIET;    
         double                TIME;   
 
         // Grid size

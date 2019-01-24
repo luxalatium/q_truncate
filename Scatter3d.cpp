@@ -3,10 +3,10 @@
 //  Scatter3d.cpp
 //  QTR
 //
-//  Created by Albert Lu on 8/6/18.
+//  Created by Albert Lu on 10/27/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 12/26/18
+//  Last modified on 1/22/19
 //
 //  Note:
 //
@@ -39,6 +39,9 @@ using std::endl;
 /* ------------------------------------------------------------------------------- */
 
 // DEFINE POTENTIAL TYPE
+
+#define POTMIN (-1000.0)
+
 #if defined POT_ECKMO
 
 #define WAVEFUNCTION(x1,x2,x3) Wavefunction_EckMO(x1,x2,x3)
@@ -91,13 +94,15 @@ Scatter3d::~Scatter3d()
 void Scatter3d::init()
 {
     log->log("\n\n[Scatter3d] INIT starts ...\n");
+    log->log("\n\n[Scatter3d] Potential type: %s\n", POTNAME);
 
     // General parameters
-    I = {0,1};         // sqrt(-1)
+    I = {0,1}; // sqrt(-1)
     PI_INV = 1.0 / PI; // 1/PI
     xZERO = {0,0}; // complex zero
     DIMENSIONS = parameters->scxd_dimensions;
     PERIOD = parameters->scxd_period;
+    SORT_PERIOD = parameters->scxd_sortperiod;
     TIME = parameters->scxd_Tf;
     QUIET = parameters->quiet;
     TIMING = parameters->timing;
@@ -110,7 +115,6 @@ void Scatter3d::init()
     Hisq.resize(DIMENSIONS);
     S.resize(DIMENSIONS);  
     kk = parameters->scxd_k;
-
     H[0] = parameters->scxd_h1;
     H[1] = parameters->scxd_h2;
     H[2] = parameters->scxd_h3;
@@ -123,19 +127,15 @@ void Scatter3d::init()
     }
 
     // Domain size and # grids
-
     Box.resize(DIMENSIONS * 2);
-
     Box[0] = parameters->scxd_xi1;
     Box[1] = parameters->scxd_xf1;
     Box[2] = parameters->scxd_xi2;
     Box[3] = parameters->scxd_xf2; 
     Box[4] = parameters->scxd_xi3;
-    Box[5] = parameters->scxd_xf3;  
-
+    Box[5] = parameters->scxd_xf3; 
     BoxShape.resize(DIMENSIONS);
     GRIDS_TOT = 1;
-
     log->log("[Scatter3d] Number of grids = (");
 
     for (unsigned int i = 0; i < DIMENSIONS; i ++)  {
@@ -143,7 +143,7 @@ void Scatter3d::init()
         BoxShape[i] = (int)( (Box[2 * i + 1] - Box[2 * i]) / H[i] ) + 1;
         GRIDS_TOT *= BoxShape[i];
 
-        if (i < DIMENSIONS - 1)
+        if ( i < DIMENSIONS - 1 )
             log->log("%d, ", BoxShape[i]);
         else
             log->log("%d)\n", BoxShape[i]);
@@ -154,13 +154,7 @@ void Scatter3d::init()
     M2 = BoxShape[2];
     log->log("[Scatter3d] x = 0 at idx = %d\n", idx_x0);
 
-    // Potential: form
-
-    Vmode.resize(DIMENSIONS);
-    Vmode[0] = parameters->scxd_Vmode_1;
-    Vmode[1] = parameters->scxd_Vmode_2;
-    Vmode[2] = parameters->scxd_Vmode_3;
-
+    // Parameters
     hb = parameters->scxd_hb;
     m  = parameters->scxd_m;
 
@@ -176,11 +170,6 @@ void Scatter3d::init()
     Ek0 = V0 * ek2v;
     log->log("[Scatter3d] Ek0 = %lf\n", Ek0);
 
-    // Potential: Related HO
-    k0 = parameters->scxd_k0;  
-    sig = parameters->scxd_sig;
-    lan = parameters->scxd_lan;
-
     // Potential: Morse
     De = parameters->scxd_De;
     Da = parameters->scxd_Da;
@@ -191,10 +180,11 @@ void Scatter3d::init()
     // Potential: Henon-Heiles
     lambda = parameters->scxd_lambda;
 
-    // Potential: EckHO
+    // Potential: HO
     sigma = parameters->scxd_sigma;
+    k0 = parameters->scxd_k0;
 
-    // Potential: GauHO
+    // Potential: Gaussian
     beta = parameters->scxd_beta;
 
     // Wavefunction parameters
@@ -208,6 +198,12 @@ void Scatter3d::init()
     A[1] = parameters->scxd_a2;
     A[2] = parameters->scxd_a3;
 
+    // Ｏverride for HO
+    A[1] = 0.5 * sqrt(m * k0) / hb;
+    log->log("[Scatter3d] A[1] = %lf\n", A[1]);
+    A[2] = 0.5 * sqrt(m * k0) / hb;
+    log->log("[Scatter3d] A[2] = %lf\n", A[2]);
+
     P.resize(DIMENSIONS);
     P[0] = parameters->scxd_p1;
     P[1] = parameters->scxd_p2;
@@ -215,17 +211,20 @@ void Scatter3d::init()
     // Ｏverride
     P[0] = sqrt(2.0 * m * Ek0);
     P[1] = 0;
-    P[2] = 0;                   
+    P[2] = 0;
     log->log("[Scatter3d] P[0] = %lf\n", P[0]);
 
     // Truncate parameters
-
     isFullGrid = parameters->scxd_isFullGrid;
-    TolH = parameters->scxd_TolH;       // Tolerance of probability density for Zero point Cutoff
-    TolL = parameters->scxd_TolL;       // Tolerance of probability density for Edge point
-    TolHd = parameters->scxd_TolHd;     // Tolerance of probability first diff for Zero point Cutoff
-    TolLd = parameters->scxd_TolLd;     // Tolerance of probability density for Edge point
-    ExReduce = parameters->scxd_ExReduce;   //Extrapolation reduce factor
+    TolH = parameters->scxd_TolH;    // Tolerance of probability density for Zero point Cutoff
+    TolL = parameters->scxd_TolL;    // Tolerance of probability density for Edge point
+    TolHd = parameters->scxd_TolHd;  // Tolerance of probability first diff for Zero point Cutoff
+    TolLd = parameters->scxd_TolLd;  // Tolerance of probability density for Edge point
+    ExReduce = parameters->scxd_ExReduce; //Extrapolation reduce factor
+
+    // Spectrum
+    dk = parameters->scxd_dk;
+    kMax = parameters->scxd_kmax;
 
     log->log("[Scatter3d] INIT done.\n\n");
 }
@@ -238,22 +237,45 @@ void Scatter3d::Evolve()
     log->log("[Scatter3d] Evolve starts ...\n");
 
     // Variables 
-    int     index;
-    bool    b1, b2, b3, b4, b5, b6;
-    double  kh2m = kk * hb / 2 / m;
-    double  k2hb = kk / hb;
-    double  coeff1, coeff2, coeff3;
-    double  pftrans;
-    double  t_0_begin, t_0_end, t_0_elapsed;
-    double  t_1_begin, t_1_end, t_1_elapsed;
-    MeshIndex tmpVec;  // temporary index container
+    int index;
+    int n1, n2, n3;
+    bool b1, b2, b3, b4, b5, b6;
+    double kh2m = kk * hb / 2 / m;
+    double k2hb = kk / hb;
+    double coeff1 = 0.0;
+    double coeff2 = 0.0;
+    double coeff3 = 0.0;
+    double pftrans;
+    double t_0_begin, t_0_end;
+    double t_1_begin, t_1_end;
+    double t_0_elapsed = 0.0;
+    double t_1_elapsed = 0.0;
+    std::complex<double> num_cpx; // complex number holder
+
+    // Core computation time (RK4, normalization, initialization, etc)
+    double t_full = 0.0;
+    double t_truncate = 0.0;
+
+    // Overhead time (truncate)
+    double t_overhead = 0.0;
+
+    // temporary index container
+    MeshIndex tmpVec;  
+
+    // Boundary layer container for extrapolation loop
+    MeshIndex ExBD;     
      
     // normalization factor
-    double  norm;
+    double norm;
+    double norm_re;
+    double norm_im;
+
+    // potential value
+    double pot_val;
  
     // 3d Grid vector and indices
-    VectorXi  grid;
-    int     g1, g2, g3;
+    VectorXi grid;
+    int g1, g2, g3;
     double  xx1, xx2, xx3;
 
     // Vector iterater
@@ -265,72 +287,151 @@ void Scatter3d::Evolve()
     std::complex<double> val, val_min;
     std::complex<double> sum;
     double val_min_abs;
+    bool isFirstExtrp;
+
+    // Neighborlist
+    int nneigh = 0;
+    vector<vector<int>> neighlist;
+    vector<int> neighs(DIMENSIONS);
 
     // PF_trans
     std::vector<double> PF_trans;
+    PF_trans.push_back(0.0);
+
+    // Auto-correlation
+    vector<vector<double>> ACFunc;
+    vector<double> acf(2);
+    acf = {0.0, 0.0};
+    ACFunc.push_back(acf);
+
+    // Spectrum
+    vector<double> Spectrum;
 
     // Make DBi and DBi2
-    if (isFullGrid)  {
+    if ( isFullGrid )  
+    {
+      t_1_begin = omp_get_wtime();
       DefineBoundary();
+      t_1_end = omp_get_wtime();
+      t_1_elapsed = t_1_end - t_1_begin;
+      t_full += t_1_elapsed;
+      if (!QUIET && TIMING) log->log("[Scatter3d] Elapsed time (define boundary) = %lf sec\n\n", t_1_elapsed);
     }
 
     log->log("[Scatter3d] Initializing containers ...\n");
 
-    t_1_begin = omp_get_wtime();
-
     // Initialize containers
-    MeshCX3D F0_STAR(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    F0_STAR.reindex(0);
+
+    t_0_begin = omp_get_wtime();
 
     MeshCX3D F(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     F.reindex(0);
-
+    MeshCX3D F0_STAR(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    F0_STAR.reindex(0);
     MeshD3D PF(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     PF.reindex(0);
-    
-    MeshD3D PFdX1(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    PFdX1.reindex(0);  
-
-    MeshD3D PFdX2(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    PFdX2.reindex(0);
-
-    MeshD3D PFdX3(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
-    PFdX3.reindex(0); 
-
+    MeshD3D POT(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    POT.reindex(0);
     MeshCX3D FF(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     FF.reindex(0);   
-
     MeshCX3D KK1(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     KK1.reindex(0);
-
     MeshCX3D KK2(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     KK2.reindex(0);  
-
     MeshCX3D KK3(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     KK3.reindex(0); 
-
     MeshCX3D KK4(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
     KK4.reindex(0);
+    MeshD3D PFdX1(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    PFdX1.reindex(0);  
+    MeshD3D PFdX2(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    PFdX2.reindex(0);
+    MeshD3D PFdX3(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    PFdX3.reindex(0);
+    Mask3D TAMask(boost::extents[BoxShape[0]][BoxShape[1]][BoxShape[2]]);
+    TAMask.reindex(0);
 
     #pragma omp parallel for
     for (unsigned int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
-
         for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
-
             for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
                 F[i1][i2][i3] = xZERO;
-                F0_STAR[i1][i2][i3] = xZERO;
                 PF[i1][i2][i3] = 0.0;
-                PFdX1[i1][i2][i3] = 0.0;
-                PFdX2[i1][i2][i3] = 0.0;
-                PFdX3[i1][i2][i3] = 0.0;
+                POT[i1][i2][i3] = POTMIN - 1.0;
+                FF[i1][i2][i3] = xZERO;
+                KK1[i1][i2][i3] = xZERO;
+                KK2[i1][i2][i3] = xZERO;
+                KK3[i1][i2][i3] = xZERO;
+                KK4[i1][i2][i3] = xZERO;
             }
         }
     }
-    t_1_end = omp_get_wtime();
-    t_1_elapsed = t_1_end - t_1_begin;
-    log->log("[Scatter3d] Elapsed time (initializing containers) = %lf sec\n\n", t_1_elapsed); 
+
+    if ( isAcf )  {
+
+        #pragma omp parallel for
+        for (unsigned int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+            for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+                    F0_STAR[i1][i2][i3] = xZERO;
+                }
+            }
+        }
+    }
+
+    if ( !isFullGrid )  {
+
+        t_1_begin = omp_get_wtime();
+        
+        #pragma omp parallel for
+        for (unsigned int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+            for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+                    PFdX1[i1][i2][i3] = 0.0;
+                    PFdX2[i1][i2][i3] = 0.0;
+                    PFdX3[i1][i2][i3] = 0.0;
+                    TAMask[i1][i2][i3] = 0;
+                }
+            }
+        }
+
+        nneigh = 0;
+
+        for (int d = 1; d <= 4; d ++)  {
+            for (n1 = -d; n1 <= d; n1 ++)  {
+                for (n2 = -(d-abs(n1)); n2 <= d-abs(n1); n2 ++)  {
+
+                    n3 = d - abs(n1) - abs(n2);
+
+                    if (n3 != 0)  {
+                        neighs = {n1,n2,n3};
+                        neighlist.push_back(neighs);
+                        neighs = {n1,n2,-n3};
+                        neighlist.push_back(neighs);
+                        nneigh += 2;
+                    }
+                    else  {
+                        neighs = {n1,n2,0};
+                        neighlist.push_back(neighs);
+                        nneigh += 1;
+                    }
+                }
+            }
+        }
+        log->log("[Scatter3d] nneigh = %d\n", nneigh); 
+        t_1_end = omp_get_wtime();
+        t_1_elapsed = t_1_end - t_1_begin;
+        t_overhead += t_1_elapsed;
+    }
+    t_0_end = omp_get_wtime();
+    t_0_elapsed = t_0_end - t_0_begin;
+    t_full += t_0_elapsed;
+
+    if ( !isFullGrid )
+        t_truncate += t_0_elapsed - t_1_elapsed; // subtract overhead
+
+    if (!QUIET && TIMING) log->log("[Scatter3d] Elapsed time (initializing containers) = %lf sec\n\n", t_0_elapsed); 
 
     // .........................................................................................
 
@@ -339,12 +440,9 @@ void Scatter3d::Evolve()
     t_1_begin = omp_get_wtime();
 
     // Initialize wavefunction
-
     #pragma omp parallel for
     for (unsigned int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
-
         for (unsigned int i2 = 1; i2 < BoxShape[1] - 1 ; i2 ++)  {
-
             for (unsigned int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
           
                 F[i1][i2][i3] = WAVEFUNCTION(Box[0] + i1 * H[0], Box[2] + i2 * H[1], Box[4] + i3 * H[2]);
@@ -353,14 +451,11 @@ void Scatter3d::Evolve()
     }
 
     // Normalization
-
     norm = 0.0;
 
     #pragma omp parallel for reduction (+:norm)
     for (unsigned int i1 = 0; i1 <  BoxShape[0]; i1 ++)  {
-
         for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
-
             for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
                 
                 norm += std::abs(F[i1][i2][i3] * std::conj(F[i1][i2][i3]));
@@ -373,64 +468,77 @@ void Scatter3d::Evolve()
 
     #pragma omp parallel for
     for (unsigned int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
-
         for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
-
             for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
                 F[i1][i2][i3] = norm * F[i1][i2][i3];
-                F0_STAR[i1][i2][i3] = std::conj(F[i1][i2][i3]);
                 PF[i1][i2][i3] = std::abs(F[i1][i2][i3] * std::conj(F[i1][i2][i3]));
             }
         }
-    }     
+    }
+
+    if ( isAcf )  {
+
+        #pragma omp parallel for
+        for (unsigned int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+            for (unsigned int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                for (unsigned int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+
+                    F0_STAR[i1][i2][i3] = std::conj(F[i1][i2][i3]);
+                }
+            }
+        }  
+    }
     t_1_end = omp_get_wtime();
     t_1_elapsed = t_1_end - t_1_begin;
-    log->log("[Scatter3d] Elapsed time (initializing wavefunction) = %lf sec\n\n", t_1_elapsed); 
+    t_full += t_1_elapsed;
+    t_truncate += t_1_elapsed;
+    if (!QUIET && TIMING) log->log("[Scatter3d] Elapsed time (initializing wavefunction) = %lf sec\n\n", t_1_elapsed); 
 
     // .........................................................................................
 
-    log->log("[Scatter3d] Computing finite differences ...\n");   
+    // PF 1st-order finite difference 
 
-    t_1_begin = omp_get_wtime();
+    if ( !isFullGrid )
+    {
+        t_1_begin = omp_get_wtime();
 
-    // Pf 1st-order finite difference 
-    coeff1 = 1.0 / (2.0 * H[0]);
-    coeff2 = 1.0 / (2.0 * H[1]);
-    coeff3 = 1.0 / (2.0 * H[2]);
+        log->log("[Scatter3d] Computing finite differences ...\n");   
 
-    #pragma omp parallel for
-    for (unsigned int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
+        coeff1 = 1.0 / (2.0 * H[0]);
+        coeff2 = 1.0 / (2.0 * H[1]);
+        coeff3 = 1.0 / (2.0 * H[2]);
 
-        for (unsigned int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
-            for (unsigned int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
+        #pragma omp parallel for
+        for (unsigned int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
+            for (unsigned int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
+                for (unsigned int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
                     PFdX1[i1][i2][i3] = std::abs(F[i1+1][i2][i3] - F[i1-1][i2][i3]) * coeff1;
                     PFdX2[i1][i2][i3] = std::abs(F[i1][i2+1][i3] - F[i1][i2-1][i3]) * coeff2;
                     PFdX3[i1][i2][i3] = std::abs(F[i1][i2][i3+1] - F[i1][i2][i3-1]) * coeff3;
+                }
             }
-        }
-    }    
-    t_1_end = omp_get_wtime();
-    t_1_elapsed = t_1_end - t_1_begin;
-    log->log("[Scatter3d] Elapsed time (finite differences) = %lf sec\n\n", t_1_elapsed); 
-
+        }    
+        t_1_end = omp_get_wtime();
+        t_1_elapsed = t_1_end - t_1_begin;
+        t_overhead += t_1_elapsed;
+        if (!QUIET && TIMING) log->log("[Scatter3d] Elapsed time (finite differences) = %lf sec\n\n", t_1_elapsed); 
+    }
     // .........................................................................................
 
-    // Truncate initial & edge point check
+    // Initial truncation & edge point check
 
-    log->log("[Scatter3d] Initial truncation ...\n");   
-
-    t_1_begin = omp_get_wtime();
-
-    if ( !isFullGrid )  // Truncate method
+    if ( !isFullGrid )
     {
+        t_1_begin = omp_get_wtime();
+
+        log->log("[Scatter3d] Initial truncation ...\n");
+
+        // Truncation
         #pragma omp parallel for private(b1, b2, b3, b4)
         for (unsigned int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
             for (unsigned int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                 for (unsigned int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
                     b1 = PF[i1][i2][i3] < TolH;
@@ -443,35 +551,34 @@ void Scatter3d::Evolve()
                 }
             }
         }
-
         // `````````````````````````````````````````````````````````````````
-        
+    
+        // TA 
         #pragma omp parallel for reduction(merge: tmpVec) private(b1, b2, b3, b4)
         for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
             for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                 for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                    b1 = F[i1][i2][i3] != std::complex<double>(0,0);
+                    b1 = F[i1][i2][i3] != xZERO;
                     b2 = PFdX1[i1][i2][i3] >= TolHd;
                     b3 = PFdX2[i1][i2][i3] >= TolHd;
                     b4 = PFdX3[i1][i2][i3] >= TolHd;
             
                     if ( b1 || ( b2 || b3 || b4 ))  {
 
-                        tmpVec.push_back(GridToIdx(i1,i2,i3));                                   
+                        tmpVec.push_back(GridToIdx(i1,i2,i3));
+                        TAMask[i1][i2][i3] = 1;                                     
                     }
                 }
             }
         }
         tmpVec.swap(TA);
         tmpVec.clear();
-
         log->log("[Scatter3d] TA size = %d\n", TA.size());
 
         // `````````````````````````````````````````````````````````````````
 
+        // TB
         #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
         for (int i = 0; i < TA.size(); i++)
         {
@@ -479,21 +586,21 @@ void Scatter3d::Evolve()
             g2 = (TA[i] % M1) / M2;
             g1 = TA[i] / M1;
 
-            b1 = F[ g1 - 1 ][ g2  ][ g3   ] == xZERO;
-            b2 = F[ g1 + 1 ][ g2  ][ g3   ] == xZERO;
-            b3 = F[ g1   ][ g2 -1 ][ g3   ] == xZERO;
-            b4 = F[ g1   ][ g2 +1 ][ g3   ] == xZERO;
-            b5 = F[ g1   ][ g2  ][ g3 - 1 ] == xZERO;
-            b6 = F[ g1   ][ g2  ][ g3 + 1 ] == xZERO;
+            b1 = F[g1-1][g2][g3] == xZERO;
+            b2 = F[g1+1][g2][g3] == xZERO;
+            b3 = F[g1][g2-1][g3] == xZERO;
+            b4 = F[g1][g2+1][g3] == xZERO;
+            b5 = F[g1][g2][g3-1] == xZERO;
+            b6 = F[g1][g2][g3+1] == xZERO;
                
             if ( b1 || b2 || b3 || b4 || b5 || b6 )
             {
-                b1 = ( PFdX1[ g1 - 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX2[ g1 - 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX3[ g1 - 1 ][ g2   ][ g3   ] < TolHd );
-                b2 = ( PFdX1[ g1 + 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX2[ g1 + 1 ][ g2   ][ g3   ] < TolHd ) && ( PFdX3[ g1 + 1 ][ g2   ][ g3   ] < TolHd );
-                b3 = ( PFdX1[ g1   ][ g2 - 1 ][ g3   ] < TolHd ) && ( PFdX2[ g1   ][ g2 - 1 ][ g3   ] < TolHd ) && ( PFdX3[ g1   ][ g2 - 1 ][ g3   ] < TolHd );
-                b4 = ( PFdX1[ g1   ][ g2 + 1 ][ g3   ] < TolHd ) && ( PFdX2[ g1   ][ g2 + 1 ][ g3   ] < TolHd ) && ( PFdX3[ g1   ][ g2 + 1 ][ g3   ] < TolHd );
-                b5 = ( PFdX1[ g1   ][ g2   ][ g3 - 1 ] < TolHd ) && ( PFdX2[ g1   ][ g2   ][ g3 - 1 ] < TolHd ) && ( PFdX3[ g1   ][ g2   ][ g3 - 1 ] < TolHd );
-                b6 = ( PFdX1[ g1   ][ g2   ][ g3 + 1 ] < TolHd ) && ( PFdX2[ g1   ][ g2   ][ g3 + 1 ] < TolHd ) && ( PFdX3[ g1   ][ g2   ][ g3 + 1 ] < TolHd );
+                b1 = ( PFdX1[g1-1][g2][g3] < TolHd ) && ( PFdX2[g1-1][g2][g3] < TolHd ) && ( PFdX3[g1-1][g2][g3] < TolHd );
+                b2 = ( PFdX1[g1+1][g2][g3] < TolHd ) && ( PFdX2[g1+1][g2][g3] < TolHd ) && ( PFdX3[g1+1][g2][g3] < TolHd );
+                b3 = ( PFdX1[g1][g2-1][g3] < TolHd ) && ( PFdX2[g1][g2-1][g3] < TolHd ) && ( PFdX3[g1][g2-1][g3] < TolHd );
+                b4 = ( PFdX1[g1][g2+1][g3] < TolHd ) && ( PFdX2[g1][g2+1][g3] < TolHd ) && ( PFdX3[g1][g2+1][g3] < TolHd );
+                b5 = ( PFdX1[g1][g2][g3-1] < TolHd ) && ( PFdX2[g1][g2][g3-1] < TolHd ) && ( PFdX3[g1][g2][g3-1] < TolHd );
+                b6 = ( PFdX1[g1][g2][g3+1] < TolHd ) && ( PFdX2[g1][g2][g3+1] < TolHd ) && ( PFdX3[g1][g2][g3+1] < TolHd );
 
                 if ( b1 || b2 || b3 || b4 || b5 || b6 ) {
 
@@ -507,6 +614,7 @@ void Scatter3d::Evolve()
 
         // `````````````````````````````````````````````````````````````````
 
+        // TA expansion
         #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)
         for (int i = 0; i < TA.size(); i++)
         {
@@ -514,46 +622,66 @@ void Scatter3d::Evolve()
             g2 = (TA[i] % M1) / M2;
             g1 = TA[i] / M1;
 
-            if (g1 + 1 != BoxShape[0] - 1)
-                tmpVec.push_back(GridToIdx(g1 + 1, g2,     g3     ));
-
-            if (g1 - 1 != 0)
-                tmpVec.push_back(GridToIdx(g1 - 1, g2,     g3     ));
-
-            if (g2 + 1 != BoxShape[1] - 1)
-                tmpVec.push_back(GridToIdx(g1,     g2 + 1, g3     ));
-
-            if (g2 - 1 != 0)
-                tmpVec.push_back(GridToIdx(g1,     g2 - 1, g3     ));  
-
-            if (g3 + 1 != BoxShape[2] - 1)     
-                tmpVec.push_back(GridToIdx(g1,     g2,     g3 + 1 ));
-
-            if (g3 - 1 != 0)
-                tmpVec.push_back(GridToIdx(g1,     g2,     g3 - 1 ));       
+            if (g1 + 1 != BoxShape[0] - 1 && TAMask[g1+1][g2][g3] == 0)  {
+                tmpVec.push_back(GridToIdx(g1+1,g2,g3));
+            }
+            if (g1 - 1 != 0 && TAMask[g1-1][g2][g3] == 0)  {
+                tmpVec.push_back(GridToIdx(g1-1,g2,g3));
+            }
+            if (g2 + 1 != BoxShape[1] - 1 && TAMask[g1][g2+1][g3] == 0)  {
+                tmpVec.push_back(GridToIdx(g1,g2+1,g3));
+            }
+            if (g2 - 1 != 0 && TAMask[g1][g2-1][g3] == 0)  {
+                tmpVec.push_back(GridToIdx(g1,g2-1,g3));  
+            }
+            if (g3 + 1 != BoxShape[2] - 1 && TAMask[g1][g2][g3+1] == 0)  {   
+                tmpVec.push_back(GridToIdx(g1,g2,g3+1));
+            }
+            if (g3 - 1 != 0 && TAMask[g1][g2][g3-1] == 0)  {
+                tmpVec.push_back(GridToIdx(g1,g2,g3-1)); 
+            }      
         }
+        // Find unique elements
+        __gnu_parallel::sort(tmpVec.begin(),tmpVec.end());
+        it = std::unique (tmpVec.begin(), tmpVec.end()); 
+        tmpVec.resize(std::distance(tmpVec.begin(),it)); 
+
         // Combine TA and tmpVec
         TA.reserve(TA.size() + tmpVec.size());
         TA.insert(TA.end(), tmpVec.begin(), tmpVec.end());
+
+        // Update TA Mask
+        #pragma omp parallel for private(g1, g2, g3)
+        for (int i = 0; i < tmpVec.size(); i++)
+        {
+            g3 = tmpVec[i] % M2;
+            g2 = (tmpVec[i] % M1) / M2;
+            g1 = tmpVec[i] / M1;
+            TAMask[g1][g2][g3] = 1;
+        }        
         tmpVec.clear();
 
-        // Find unique elements
-        __gnu_parallel::sort(TA.begin(),TA.end());
-        it = std::unique (TA.begin(), TA.end()); 
-        TA.resize(std::distance(TA.begin(),it));        
+        // Sort TA
+        __gnu_parallel::sort (TA.begin(), TA.end());
+
+        log->log("[Scatter3d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
+
+        t_1_end = omp_get_wtime();
+        t_1_elapsed = t_1_end - t_1_begin;
+        t_overhead += t_1_elapsed;
+
+        if (!QUIET && TIMING)  {
+            log->log("[Scatter3d] Elapsed time (initial truncation) = %lf sec\n\n", t_1_elapsed);
+            log->log("[Scatter3d] Initialization core computation time: %lf sec\n", t_truncate);            
+            log->log("[Scatter3d] Initialization overhead: %lf sec\n", t_overhead); 
+        }
     }
     else  // Full grid approach
     {
         TB = DBi;
+        log->log("[Scatter3d] DBi = %d DBi2 = %d\n\n", DBi.size(), DBi2.size());
+        log->log("[Scatter3d] Initialization core computation time: %lf sec\n", t_full);   
     }
-
-    log->log("[Scatter3d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
-    log->log("[Scatter3d] DBi = %d DBi2 = %d\n", DBi.size(), DBi2.size());
-
-    t_1_end = omp_get_wtime();
-    t_1_elapsed = t_1_end - t_1_begin;
-    log->log("[Scatter3d] Elapsed time (initial truncation) = %lf sec\n\n", t_1_elapsed); 
-
     // .........................................................................................
 
     // Time iteration 
@@ -565,37 +693,19 @@ void Scatter3d::Evolve()
 
     for (int tt = 0; tt < (int)(TIME / kk); tt ++)
     {
-        t_0_begin = omp_get_wtime();
-        t_1_begin = omp_get_wtime();
-
-        #pragma omp parallel for
-        for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
-
-            for (int i2 = 1; i2 < BoxShape[1] - 1 ; i2 ++)  {
-
-                for (int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
-          
-                    FF[i1][i2][i3] = xZERO;
-                    KK1[i1][i2][i3] = xZERO;
-                    KK2[i1][i2][i3] = xZERO;
-                    KK3[i1][i2][i3] = xZERO;
-                    KK4[i1][i2][i3] = xZERO;
-                }
-            }
-        }
-        t_1_end = omp_get_wtime();
-        t_1_elapsed = t_1_end - t_1_begin;
-        if (!QUIET && TIMING) log->log("Elapsed time (omp-a-1: fill_n) = %lf sec\n", t_1_elapsed);   
+        t_0_begin = omp_get_wtime(); 
 
         // Check if TB of f is higher than TolL
         
         if ( !isFullGrid )
         {
             t_1_begin = omp_get_wtime();
+            t_truncate = 0.0;
+            t_overhead = 0.0;
 
             TBL.clear();
 
-            // omp-a-1
+            // TBL an TBL_P
             #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
             for (int i = 0; i < TB.size(); i++)
             {
@@ -622,10 +732,17 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);   
-        }    
-
+            t_overhead += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-a-2: TBL, TBL_P) = %lf sec\n", t_1_elapsed);
+            //if (!QUIET) log->log("TBL size = %d TBL_P size = %d\n", TBL.size(), TBL_P.size());   
+        }
+        else  
+        {
+            t_full = 0.0;
+        }
         isExtrapolate = false;
+        isFirstExtrp = true;
+        // .........................................................................................
 
         // CASE 1: Truncating with extrapolation
 
@@ -633,7 +750,7 @@ void Scatter3d::Evolve()
         {
             isExtrapolate = true;
 
-            // Extrapolation3D
+            // Extrapolation
             // .............................................................................................
 
             t_1_begin = omp_get_wtime();
@@ -653,34 +770,23 @@ void Scatter3d::Evolve()
                 g2 = (TBL[index] % M1) / M2;
                 g1 = TBL[index] / M1;
 
-                if ( F[g1 - 1][g2][g3] == xZERO )  {
-
-                    ExFF.push_back(GridToIdx(g1 - 1, g2, g3));
+                if ( F[g1-1][g2][g3] == xZERO )  {
+                    ExFF.push_back(GridToIdx(g1-1, g2, g3));
                 }
-
-                if ( F[g1 + 1][g2][g3] == xZERO )  {
-
-                    ExFF.push_back(GridToIdx(g1 + 1, g2, g3));
+                if ( F[g1+1][g2][g3] == xZERO )  {
+                    ExFF.push_back(GridToIdx(g1+1, g2, g3));
                 }
-
-                if ( F[g1][g2 - 1][g3] == xZERO )  {
-
-                    ExFF.push_back(GridToIdx(g1, g2 - 1, g3));
+                if ( F[g1][g2-1][g3] == xZERO )  {
+                    ExFF.push_back(GridToIdx(g1, g2-1, g3));
                 }
-
-                if ( F[g1][g2 + 1][g3] == xZERO )  {
-
-                    ExFF.push_back(GridToIdx(g1, g2 + 1, g3));
+                if ( F[g1][g2+1][g3] == xZERO )  {
+                    ExFF.push_back(GridToIdx(g1, g2+1, g3));
                 }
-
-                if ( F[g1][g2][g3 - 1] == xZERO )  {
-
-                    ExFF.push_back(GridToIdx(g1, g2, g3 - 1));
+                if ( F[g1][g2][g3-1] == xZERO )  {
+                    ExFF.push_back(GridToIdx(g1, g2, g3-1));
                 }
-
-                if ( F[g1][g2][g3 + 1] == xZERO )  {
-
-                    ExFF.push_back(GridToIdx(g1, g2, g3 + 1));
+                if ( F[g1][g2][g3+1] == xZERO )  {
+                    ExFF.push_back(GridToIdx(g1, g2, g3+1));
                 }
             }
 
@@ -700,6 +806,7 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-b-1: ExFF) = %lf sec\n", t_1_elapsed);   
 
             // .....................................................................
@@ -878,166 +985,458 @@ void Scatter3d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-b-2: ExFF) = %lf sec\n", t_1_elapsed);  
 
             // ............................................................................................. Extrapolation
 
-            // Check Extending nonzero Area
+            if ( isFirstExtrp )  {
 
-            t_1_begin = omp_get_wtime();
+                // Check Extending nonzero Area
 
-            #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)
-            for (int i = 0; i < ExFF.size(); i++)
+                t_1_begin = omp_get_wtime();
+
+                #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)
+                for (int i = 0; i < ExFF.size(); i++)
+                {
+                    g3 = ExFF[i] % M2;
+                    g2 = (ExFF[i] % M1) / M2;
+                    g1 = ExFF[i] / M1;
+
+                    if (TAMask[g1][g2][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2,g3));
+                    if (TAMask[g1+1][g2][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1+1,g2,g3));
+                    if (TAMask[g1-1][g2][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1-1,g2,g3));
+                    if (TAMask[g1][g2+1][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2+1,g3));
+                    if (TAMask[g1][g2-1][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2-1,g3));
+                    if (TAMask[g1][g2][g3+1] == 0)  
+                        tmpVec.push_back(GridToIdx(g1,g2,g3+1));
+                    if (TAMask[g1][g2][g3-1] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2,g3-1));          
+                }
+
+                // Find unique elements
+                __gnu_parallel::sort(tmpVec.begin(),tmpVec.end());
+                it = std::unique (tmpVec.begin(), tmpVec.end()); 
+                tmpVec.resize(std::distance(tmpVec.begin(),it));
+
+                // Combine TA and tmpVec
+                TA.reserve(TA.size() + tmpVec.size());
+                TA.insert(TA.end(), tmpVec.begin(), tmpVec.end());
+
+                // Update TA Mask
+                #pragma omp parallel for private(g1, g2, g3)
+                for (int i = 0; i < tmpVec.size(); i++)
+                {
+                    g3 = tmpVec[i] % M2;
+                    g2 = (tmpVec[i] % M1) / M2;
+                    g1 = tmpVec[i] / M1;
+                    TAMask[g1][g2][g3] = 1;
+                }    
+                tmpVec.clear();
+
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
+        
+                // Runge–Kutta 4
+                t_1_begin = omp_get_wtime();
+
+                // RK4-1
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < TA.size(); i++)  {
+
+                    g3 = TA[i] % M2;
+                    g2 = (TA[i] % M1) / M2;
+                    g1 = TA[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK1[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( F[g1 - 1][g2][g3] - 2.0 * F[g1][g2][g3] + F[g1 + 1][g2][g3] )
+                                    + Hisq[1] * ( F[g1][g2 - 1][g3] - 2.0 * F[g1][g2][g3] + F[g1][g2 + 1][g3] ) 
+                                    + Hisq[2] * ( F[g1][g2][g3 - 1] - 2.0 * F[g1][g2][g3] + F[g1][g2][g3 + 1] )
+                                )  - I * k2hb * pot_val * F[g1][g2][g3];
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_truncate += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-1: CASE 1 KK1) = %lf sec\n", t_1_elapsed);
+
+                // RK4-2
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < TA.size(); i++)  {
+
+                    g3 = TA[i] % M2;
+                    g2 = (TA[i] % M1) / M2;
+                    g1 = TA[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
+                                    + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
+                                    + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
+                                    ) - I * k2hb * pot_val * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_truncate += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-2: CASE 1 KK2) = %lf sec\n", t_1_elapsed);
+
+                // RK4-3
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < TA.size(); i++)  {
+
+                    g3 = TA[i] % M2;
+                    g2 = (TA[i] % M1) / M2;
+                    g1 = TA[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK3[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK2[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK2[g1 + 1][g2][g3] ) )
+                                    + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK2[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK2[g1][g2 + 1][g3] ) )
+                                    + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK2[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK2[g1][g2][g3 + 1] ) )
+                                    ) - I * k2hb * pot_val * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] );
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_truncate += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-3: CASE 1 KK3) = %lf sec\n", t_1_elapsed);
+
+                // RK4-4
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < TA.size(); i++)  {
+
+                    g3 = TA[i] % M2;
+                    g2 = (TA[i] % M1) / M2;
+                    g1 = TA[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK4[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 1.0 * KK3[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 1.0 * KK3[g1 + 1][g2][g3] ) )
+                                    + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 1.0 * KK3[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 1.0 * KK3[g1][g2 + 1][g3] ) )
+                                    + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 1.0 * KK3[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 1.0 * KK3[g1][g2][g3 + 1] ) )
+                                    ) - I * k2hb * pot_val * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] );
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_truncate += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-4: CASE 1 KK4) = %lf sec\n", t_1_elapsed);
+
+                // RK4-5
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3)
+                for (int i = 0; i < TA.size(); i++)  {
+
+                    g3 = TA[i] % M2;
+                    g2 = (TA[i] % M1) / M2;
+                    g1 = TA[i] / M1;
+                    FF[g1][g2][g3] = F[g1][g2][g3] + ( KK1[g1][g2][g3] + 2.0 * KK2[g1][g2][g3] + 2.0 * KK3[g1][g2][g3] + KK4[g1][g2][g3] ) / 6.0;
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_truncate += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-5: CASE 1 FF) = %lf sec\n", t_1_elapsed);
+
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3)
+                for (int i = 0; i < ExFF.size(); i++)  {
+
+                    g3 = ExFF[i] % M2;
+                    g2 = (ExFF[i] % M1) / M2;
+                    g1 = ExFF[i] / M1;
+                    PFdX1[g1][g2][g3] = 0.5 * Hi[0] * std::abs( FF[g1+1][g2][g3] - FF[g1-1][g2][g3]);
+                    PFdX2[g1][g2][g3] = 0.5 * Hi[1] * std::abs( FF[g1][g2+1][g3] - FF[g1][g2-1][g3]);
+                    PFdX3[g1][g2][g3] = 0.5 * Hi[2] * std::abs( FF[g1][g2][g3+1] - FF[g1][g2][g3-1]);            
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-6: CASE 1 PF) = %lf sec\n", t_1_elapsed);
+            }
+            else
             {
-                g3 = ExFF[i] % M2;
-                g2 = (ExFF[i] % M1) / M2;
-                g1 = ExFF[i] / M1;
+                // Extrapolation loop when multiple expanding occured
 
-                tmpVec.push_back(GridToIdx( g1    , g2    , g3     ));
-                tmpVec.push_back(GridToIdx( g1 + 1, g2    , g3     ));
-                tmpVec.push_back(GridToIdx( g1 - 1, g2    , g3     ));
-                tmpVec.push_back(GridToIdx( g1    , g2 + 1, g3     ));
-                tmpVec.push_back(GridToIdx( g1    , g2 - 1, g3     ));  
-                tmpVec.push_back(GridToIdx( g1    , g2    , g3 + 1 ));
-                tmpVec.push_back(GridToIdx( g1    , g2    , g3 - 1 ));          
+                t_1_begin = omp_get_wtime();
+
+                #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)
+                for (int i = 0; i < ExFF.size(); i++)
+                {
+                    g3 = ExFF[i] % M2;
+                    g2 = (ExFF[i] % M1) / M2;
+                    g1 = ExFF[i] / M1;
+
+                    if (TAMask[g1][g2][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2,g3));
+                    if (TAMask[g1+1][g2][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1+1,g2,g3));
+                    if (TAMask[g1-1][g2][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1-1,g2,g3));
+                    if (TAMask[g1][g2+1][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2+1,g3));
+                    if (TAMask[g1][g2-1][g3] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2-1,g3));
+                    if (TAMask[g1][g2][g3+1] == 0)  
+                        tmpVec.push_back(GridToIdx(g1,g2,g3+1));
+                    if (TAMask[g1][g2][g3-1] == 0)
+                        tmpVec.push_back(GridToIdx(g1,g2,g3-1));          
+                }
+
+                // Find unique elements
+                __gnu_parallel::sort(tmpVec.begin(),tmpVec.end());
+                it = std::unique (tmpVec.begin(), tmpVec.end()); 
+                tmpVec.resize(std::distance(tmpVec.begin(),it));
+
+                // Combine TA and tmpVec
+                TA.reserve(TA.size() + tmpVec.size());
+                TA.insert(TA.end(), tmpVec.begin(), tmpVec.end());
+
+                // Update TA Mask
+                #pragma omp parallel for private(g1, g2, g3)
+                for (int i = 0; i < tmpVec.size(); i++)
+                {
+                    g3 = tmpVec[i] % M2;
+                    g2 = (tmpVec[i] % M1) / M2;
+                    g1 = tmpVec[i] / M1;
+                    TAMask[g1][g2][g3] = 1;
+                }    
+                tmpVec.clear();
+
+                #pragma omp parallel for reduction(merge: ExBD) private(g1, g2, g3, n1, n2, n3)
+                for (int i = 0; i < ExFF.size(); i++)
+                {
+                    g3 = ExFF[i] % M2;
+                    g2 = (ExFF[i] % M1) / M2;
+                    g1 = ExFF[i] / M1;
+
+                    ExBD.push_back(ExFF[i]);
+
+                    for (int j = 0; j < nneigh; j ++)  {
+
+                        n1 = neighlist[j][0];
+                        n2 = neighlist[j][1];
+                        n3 = neighlist[j][2];
+
+                        if (TAMask[g1+n1][g2+n2][g3+n3] == 1)
+                            ExBD.push_back(GridToIdx(g1+n1,g2+n2,g3+n3));
+                    }
+                }
+
+                // Find unique elements (ExBD)
+                __gnu_parallel::sort(ExBD.begin(),ExBD.end());
+                it = std::unique (ExBD.begin(), ExBD.end()); 
+                ExBD.resize(std::distance(ExBD.begin(),it));
+
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET) log->log("ExBD size = %d\n", ExBD.size()); 
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-cx-1: CASE 1 ExBD) = %lf sec\n", t_1_elapsed); 
+        
+                // Runge–Kutta 4
+                t_1_begin = omp_get_wtime();
+
+                // RK4-1
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < ExBD.size(); i++)  {
+
+                    g3 = ExBD[i] % M2;
+                    g2 = (ExBD[i] % M1) / M2;
+                    g1 = ExBD[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK1[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( F[g1 - 1][g2][g3] - 2.0 * F[g1][g2][g3] + F[g1 + 1][g2][g3] )
+                                    + Hisq[1] * ( F[g1][g2 - 1][g3] - 2.0 * F[g1][g2][g3] + F[g1][g2 + 1][g3] ) 
+                                    + Hisq[2] * ( F[g1][g2][g3 - 1] - 2.0 * F[g1][g2][g3] + F[g1][g2][g3 + 1] )
+                                )  - I * k2hb * pot_val * F[g1][g2][g3];
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kkx-1: CASE 1 KK1) = %lf sec\n", t_1_elapsed);
+
+                // RK4-2
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < ExBD.size(); i++)  {
+
+                    g3 = ExBD[i] % M2;
+                    g2 = (ExBD[i] % M1) / M2;
+                    g1 = ExBD[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
+                                    + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
+                                    + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
+                                    ) - I * k2hb * pot_val * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kkx-2: CASE 1 KK2) = %lf sec\n", t_1_elapsed);
+
+                // RK4-3
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < ExBD.size(); i++)  {
+
+                    g3 = ExBD[i] % M2;
+                    g2 = (ExBD[i] % M1) / M2;
+                    g1 = ExBD[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK3[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK2[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK2[g1 + 1][g2][g3] ) )
+                                    + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK2[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK2[g1][g2 + 1][g3] ) )
+                                    + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK2[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK2[g1][g2][g3 + 1] ) )
+                                    ) - I * k2hb * pot_val * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] );
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kkx-3: CASE 1 KK3) = %lf sec\n", t_1_elapsed);
+
+                // RK4-4
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3, pot_val)
+                for (int i = 0; i < ExBD.size(); i++)  {
+
+                    g3 = ExBD[i] % M2;
+                    g2 = (ExBD[i] % M1) / M2;
+                    g1 = ExBD[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    xx3 = Box[4] + g3 * H[2];
+
+                    if ( POT[g1][g2][g3] < POTMIN )  {
+                        pot_val = POTENTIAL(xx1, xx2, xx3);
+                        POT[g1][g2][g3] = pot_val;
+                    }
+                    else  {
+                        pot_val = POT[g1][g2][g3];
+                    }
+
+                    KK4[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 1.0 * KK3[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 1.0 * KK3[g1 + 1][g2][g3] ) )
+                                    + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 1.0 * KK3[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 1.0 * KK3[g1][g2 + 1][g3] ) )
+                                    + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 1.0 * KK3[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 1.0 * KK3[g1][g2][g3 + 1] ) )
+                                    ) - I * k2hb * pot_val * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] );
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kkx-4: CASE 1 KK4) = %lf sec\n", t_1_elapsed);
+
+                // RK4-5
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3)
+                for (int i = 0; i < ExBD.size(); i++)  {
+
+                    g3 = ExBD[i] % M2;
+                    g2 = (ExBD[i] % M1) / M2;
+                    g1 = ExBD[i] / M1;
+                    FF[g1][g2][g3] = F[g1][g2][g3] + ( KK1[g1][g2][g3] + 2.0 * KK2[g1][g2][g3] + 2.0 * KK3[g1][g2][g3] + KK4[g1][g2][g3] ) / 6.0;
+                }
+                ExBD.clear();
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kkx-5: CASE 1 FF) = %lf sec\n", t_1_elapsed);
+
+                t_1_begin = omp_get_wtime();
+                #pragma omp parallel for private(g1, g2, g3)
+                for (int i = 0; i < ExFF.size(); i++)  {
+
+                    g3 = ExFF[i] % M2;
+                    g2 = (ExFF[i] % M1) / M2;
+                    g1 = ExFF[i] / M1;
+                    PFdX1[g1][g2][g3] = 0.5 * Hi[0] * std::abs( FF[g1+1][g2][g3] - FF[g1-1][g2][g3]);
+                    PFdX2[g1][g2][g3] = 0.5 * Hi[1] * std::abs( FF[g1][g2+1][g3] - FF[g1][g2-1][g3]);
+                    PFdX3[g1][g2][g3] = 0.5 * Hi[2] * std::abs( FF[g1][g2][g3+1] - FF[g1][g2][g3-1]);            
+                }
+                t_1_end = omp_get_wtime();
+                t_1_elapsed = t_1_end - t_1_begin;
+                t_overhead += t_1_elapsed;
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-kkx-6: CASE 1 PF) = %lf sec\n", t_1_elapsed);               
             }
 
-            // Combine TA and tmpVec
-            TA.reserve(TA.size() + tmpVec.size());
-            TA.insert(TA.end(), tmpVec.begin(), tmpVec.end());
-            tmpVec.clear();
-
-            // Find unique elements
-            __gnu_parallel::sort(TA.begin(),TA.end());
-            it = std::unique (TA.begin(), TA.end()); 
-            TA.resize(std::distance(TA.begin(),it));
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-c-1: CASE 1 TA) = %lf sec\n", t_1_elapsed); 
-     
-            // Runge–Kutta 4
-            t_1_begin = omp_get_wtime();
-
-            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
-            for (int i = 0; i < TA.size(); i++)  {
-
-                g3 = TA[i] % M2;
-                g2 = (TA[i] % M1) / M2;
-                g1 = TA[i] / M1;
-                xx1 = Box[0] + g1 * H[0];
-                xx2 = Box[2] + g2 * H[1];
-                xx3 = Box[4] + g3 * H[2];
-
-                KK1[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( F[g1 - 1][g2][g3] - 2.0 * F[g1][g2][g3] + F[g1 + 1][g2][g3] )
-                                  + Hisq[1] * ( F[g1][g2 - 1][g3] - 2.0 * F[g1][g2][g3] + F[g1][g2 + 1][g3] ) 
-                                  + Hisq[2] * ( F[g1][g2][g3 - 1] - 2.0 * F[g1][g2][g3] + F[g1][g2][g3 + 1] )
-                               )  - I * k2hb * POTENTIAL(xx1, xx2, xx3) * F[g1][g2][g3];
-            }
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-1: CASE 1 KK1) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
-            for (int i = 0; i < TA.size(); i++)  {
-
-                g3 = TA[i] % M2;
-                g2 = (TA[i] % M1) / M2;
-                g1 = TA[i] / M1;
-                xx1 = Box[0] + g1 * H[0];
-                xx2 = Box[2] + g2 * H[1];
-                xx3 = Box[4] + g3 * H[2];
-
-                KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
-                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
-                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
-                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
-            }
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-2: CASE 1 KK2) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
-            for (int i = 0; i < TA.size(); i++)  {
-
-                g3 = TA[i] % M2;
-                g2 = (TA[i] % M1) / M2;
-                g1 = TA[i] / M1;
-                xx1 = Box[0] + g1 * H[0];
-                xx2 = Box[2] + g2 * H[1];
-                xx3 = Box[4] + g3 * H[2];
-
-                KK3[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK2[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK2[g1 + 1][g2][g3] ) )
-                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK2[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK2[g1][g2 + 1][g3] ) )
-                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK2[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK2[g1][g2][g3 + 1] ) )
-                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] );
-            }
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-3: CASE 1 KK3) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
-            for (int i = 0; i < TA.size(); i++)  {
-
-                g3 = TA[i] % M2;
-                g2 = (TA[i] % M1) / M2;
-                g1 = TA[i] / M1;
-                xx1 = Box[0] + g1 * H[0];
-                xx2 = Box[2] + g2 * H[1];
-                xx3 = Box[4] + g3 * H[2];
-
-                KK4[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 1.0 * KK3[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 1.0 * KK3[g1 + 1][g2][g3] ) )
-                                  + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 1.0 * KK3[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 1.0 * KK3[g1][g2 + 1][g3] ) )
-                                  + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 1.0 * KK3[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 1.0 * KK3[g1][g2][g3 + 1] ) )
-                                ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] );
-            }
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-4: CASE 1 KK4) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            #pragma omp parallel for private(g1, g2, g3)
-            for (int i = 0; i < TA.size(); i++)  {
-
-                g3 = TA[i] % M2;
-                g2 = (TA[i] % M1) / M2;
-                g1 = TA[i] / M1;
-                FF[g1][g2][g3] = F[g1][g2][g3] + ( KK1[g1][g2][g3] + 2.0 * KK2[g1][g2][g3] + 2.0 * KK3[g1][g2][g3] + KK4[g1][g2][g3] ) / 6.0;
-            }
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-5: CASE 1 FF) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-            
-            #pragma omp parallel for private(g1, g2, g3)
-            for (int i = 0; i < ExFF.size(); i++)  {
-
-                g3 = ExFF[i] % M2;
-                g2 = (ExFF[i] % M1) / M2;
-                g1 = ExFF[i] / M1;
-                PFdX1[g1][g2][g3] = 0.5 * Hi[0] * std::abs( FF[g1 + 1][g2][g3] - FF[g1 - 1][g2][g3]);
-                PFdX2[g1][g2][g3] = 0.5 * Hi[1] * std::abs( FF[g1][g2 + 1][g3] - FF[g1][g2 - 1][g3]);
-                PFdX3[g1][g2][g3] = 0.5 * Hi[2] * std::abs( FF[g1][g2][g3 + 1] - FF[g1][g2][g3 - 1]);            
-            }
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-6: CASE 1 PF) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            // check Multiple Expanding 
+            // Check Multiple Expanding 
             // TBL = index of FF that FF(TBL) is higher than TolL
 
-            TBL.clear();
-
             t_1_begin = omp_get_wtime();
+            TBL.clear();
 
             #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
             for (int i = 0; i < ExFF.size(); i++)
@@ -1056,7 +1455,7 @@ void Scatter3d::Evolve()
                 if (  ( b1 || b2 || b3 || b4 ) && b5 && b6 )  {
                     tmpVec.push_back(ExFF[i]);
                 }
-            }        
+            }          
             tmpVec.swap(TBL);
             tmpVec.clear(); 
 
@@ -1080,8 +1479,14 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
+            if (!QUIET) log->log("TBL size = %d TBL_P size = %d\n", TBL.size(), TBL_P.size()); 
             if (!QUIET && TIMING) log->log("Elapsed time (omp-c-3 CASE 1 TBL TBL_P) = %lf sec\n", t_1_elapsed); 
+
+            // Update isFirstExtrp
+            isFirstExtrp = (TBL.size() == 0) ? 1 : 0;
         }
+        // .........................................................................................
 
         // CASE 2: Truncating without extrapolation
 
@@ -1089,6 +1494,7 @@ void Scatter3d::Evolve()
         {
             t_1_begin = omp_get_wtime();
 
+            // RK4-1
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
@@ -1104,12 +1510,13 @@ void Scatter3d::Evolve()
                                   + Hisq[2] * ( F[g1][g2][g3 - 1] - 2.0 * F[g1][g2][g3] + F[g1][g2][g3 + 1] )
                                )  - I * k2hb * POTENTIAL(xx1, xx2, xx3) * F[g1][g2][g3];
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_truncate += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-11: CASE 2 KK1) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-2
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
@@ -1125,12 +1532,13 @@ void Scatter3d::Evolve()
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
                                 ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_truncate += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-12: CASE 2 KK2) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-3
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
@@ -1146,12 +1554,13 @@ void Scatter3d::Evolve()
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK2[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK2[g1][g2][g3 + 1] ) )
                                 ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK2[g1][g2][g3] );
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_truncate += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-13: CASE 2 KK3) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-4
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i = 0; i < TA.size(); i++)  {
 
@@ -1167,12 +1576,13 @@ void Scatter3d::Evolve()
                                   + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 1.0 * KK3[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 1.0 * KK3[g1][g2][g3 + 1] ) )
                                 ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 1.0 * KK3[g1][g2][g3] );
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_truncate += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-14: CASE 2 KK4) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-5
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3)
             for (int i = 0; i < TA.size(); i++)  {
 
@@ -1184,18 +1594,20 @@ void Scatter3d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_truncate += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-15: CASE 2 FF) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-        }   
+        }
         else if ( !isExtrapolate && isFullGrid )
         {
+            // .........................................................................................
+
             // CASE 3: Full grid
 
+            // RK4-1
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
                         g1 = i1;
@@ -1212,44 +1624,42 @@ void Scatter3d::Evolve()
                     }
                 }
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_full += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-21: CASE 3 KK1) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-2
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
-                            g1 = i1;
-                            g2 = i2;
-                            g3 = i3;
-                            xx1 = Box[0] + g1 * H[0];
-                            xx2 = Box[2] + g2 * H[1];
-                            xx3 = Box[4] + g3 * H[2];
+                        g1 = i1;
+                        g2 = i2;
+                        g3 = i3;
+                        xx1 = Box[0] + g1 * H[0];
+                        xx2 = Box[2] + g2 * H[1];
+                        xx3 = Box[4] + g3 * H[2];
 
-                            KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
-                                              + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
-                                              + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
-                                             ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
+                        KK2[g1][g2][g3] = I * kh2m * (  Hisq[0] * ( ( F[g1 - 1][g2][g3] + 0.5 * KK1[g1 - 1][g2][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1 + 1][g2][g3] + 0.5 * KK1[g1 + 1][g2][g3] ) )
+                                        + Hisq[1] * ( ( F[g1][g2 - 1][g3] + 0.5 * KK1[g1][g2 - 1][g3] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2 + 1][g3] + 0.5 * KK1[g1][g2 + 1][g3] ) )
+                                        + Hisq[2] * ( ( F[g1][g2][g3 - 1] + 0.5 * KK1[g1][g2][g3 - 1] ) - 2.0 * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] ) + ( F[g1][g2][g3 + 1] + 0.5 * KK1[g1][g2][g3 + 1] ) )
+                                        ) - I * k2hb * POTENTIAL(xx1, xx2, xx3) * ( F[g1][g2][g3] + 0.5 * KK1[g1][g2][g3] );
                     }
                 }
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_full += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-22: CASE 3 KK2) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-3
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
                         g1 = i1;
@@ -1266,17 +1676,16 @@ void Scatter3d::Evolve()
                     }
                 }
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_full += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-23: CASE 3 KK3) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-4
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3, xx1, xx2, xx3)
             for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
                         g1 = i1;
@@ -1293,17 +1702,16 @@ void Scatter3d::Evolve()
                     }
                 }
             }
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_full += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-24: CASE 3 KK4) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
 
+            // RK4-5
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for private(g1, g2, g3)
             for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
                         g1 = i1;
@@ -1315,13 +1723,14 @@ void Scatter3d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-5: CASE 3 FF) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();  
+            t_full += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-kk-5: CASE 3 FF) = %lf sec\n", t_1_elapsed);  
         }
+        // .........................................................................................
+
+        // FF(t+1) Normailzed & go on
 
         t_1_begin = omp_get_wtime();
-
-        // ff(t+1) Normailzed & go on
         norm = 0.0;
 
         if (!isFullGrid)  {
@@ -1334,13 +1743,12 @@ void Scatter3d::Evolve()
                 g1 = TA[i] / M1;
                 norm += std::abs(FF[g1][g2][g3] * std::conj(FF[g1][g2][g3]));
             }
-        }  else  {
+        }  
+        else  {
 
             #pragma omp parallel for reduction (+:norm)
             for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
-
                 for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
-
                     for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
                         norm += std::abs(FF[i1][i2][i3] * std::conj(FF[i1][i2][i3]));
@@ -1353,9 +1761,7 @@ void Scatter3d::Evolve()
 
         #pragma omp parallel for
         for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
-
             for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
-
                 for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
 
                     FF[i1][i2][i3] = norm * FF[i1][i2][i3];
@@ -1363,22 +1769,21 @@ void Scatter3d::Evolve()
                     PF[i1][i2][i3] = std::abs(F[i1][i2][i3] * std::conj(F[i1][i2][i3]));
                 }
             }
-        }     
+        }    
         t_1_end = omp_get_wtime();
         t_1_elapsed = t_1_end - t_1_begin;
-        if (!QUIET && TIMING) log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed); 
+        t_full += t_1_elapsed;
+        t_truncate += t_1_elapsed;
+        if (!QUIET && TIMING) log->log("Elapsed time (omp-e-1 FF) = %lf sec\n", t_1_elapsed);
 
         // Truncated_New Edge
         if ( !isFullGrid )
         {
-            t_1_begin = omp_get_wtime();
-
             // PFdX
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for
             for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1] - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1; i3 ++)  {
 
                         PFdX1[i1][i2][i3] = std::abs(F[i1+1][i2][i3] - F[i1-1][i2][i3]) * coeff1;
@@ -1389,17 +1794,14 @@ void Scatter3d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-e-2 PF) = %lf sec\n", t_1_elapsed); 
 
             // Truncate
-
             t_1_begin = omp_get_wtime();
-
             #pragma omp parallel for
             for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1]  - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
             
                         if ( ( PF[i1][i2][i3] < TolH ) && ( PFdX1[i1][i2][i3] < TolHd ) && ( PFdX2[i1][i2][i3] < TolHd ) && ( PFdX3[i1][i2][i3] < TolHd ) )  {
@@ -1410,11 +1812,11 @@ void Scatter3d::Evolve()
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-1 PF) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
+            
             // TA
-
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2)
             for ( int i = 0; i < TA.size(); i++ )  {
 
@@ -1423,10 +1825,11 @@ void Scatter3d::Evolve()
                 g1 = TA[i] / M1;
                 b1 = F[g1][g2][g3] != xZERO;
                 b2 = PFdX1[g1][g2][g3] >= TolHd || PFdX2[g1][g2][g3] >= TolHd || PFdX3[g1][g2][g3] >= TolHd;
+                TAMask[g1][g2][g3] = 0;
 
                 if ( b1 || b2 )  {
-
                     tmpVec.push_back(TA[i]);
+                    TAMask[g1][g2][g3] = 1;
                 }
             }
             tmpVec.swap(TA);  
@@ -1434,11 +1837,11 @@ void Scatter3d::Evolve()
 
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-2 TA) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
+            
             // TB
-
+            t_1_begin = omp_get_wtime(); 
             #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3, b1, b2, b3, b4, b5, b6)
             for ( int i = 0; i < TA.size(); i++ )  {
 
@@ -1446,21 +1849,21 @@ void Scatter3d::Evolve()
                 g2 = (TA[i] % M1) / M2;
                 g1 = TA[i] / M1;
 
-                b1 = F[ g1 - 1 ][ g2    ][ g3     ] == xZERO;
-                b2 = F[ g1 + 1 ][ g2    ][ g3     ] == xZERO;
-                b3 = F[ g1     ][ g2 -1 ][ g3     ] == xZERO;
-                b4 = F[ g1     ][ g2 +1 ][ g3     ] == xZERO;
-                b5 = F[ g1     ][ g2    ][ g3 - 1 ] == xZERO;
-                b6 = F[ g1     ][ g2    ][ g3 + 1 ] == xZERO;
+                b1 = F[g1-1][g2][g3] == xZERO;
+                b2 = F[g1+1][g2][g3] == xZERO;
+                b3 = F[g1][g2-1][g3] == xZERO;
+                b4 = F[g1][g2+1][g3] == xZERO;
+                b5 = F[g1][g2][g3-1] == xZERO;
+                b6 = F[g1][g2][g3+1] == xZERO;
 
                 if ( b1 || b2 || b3 || b4 || b5 || b6 )
                 {
-                    b1 = ( PFdX1[ g1 - 1 ][ g2     ][ g3     ] < TolHd ) && ( PFdX2[ g1 - 1 ][ g2     ][ g3     ] < TolHd ) && ( PFdX3[ g1 - 1 ][ g2     ][ g3     ] < TolHd ) ;
-                    b2 = ( PFdX1[ g1 + 1 ][ g2     ][ g3     ] < TolHd ) && ( PFdX2[ g1 + 1 ][ g2     ][ g3     ] < TolHd ) && ( PFdX3[ g1 + 1 ][ g2     ][ g3     ] < TolHd ) ;
-                    b3 = ( PFdX1[ g1     ][ g2 - 1 ][ g3     ] < TolHd ) && ( PFdX2[ g1     ][ g2 - 1 ][ g3     ] < TolHd ) && ( PFdX3[ g1     ][ g2 - 1 ][ g3     ] < TolHd ) ;
-                    b4 = ( PFdX1[ g1     ][ g2 + 1 ][ g3     ] < TolHd ) && ( PFdX2[ g1     ][ g2 + 1 ][ g3     ] < TolHd ) && ( PFdX3[ g1     ][ g2 + 1 ][ g3     ] < TolHd ) ;
-                    b5 = ( PFdX1[ g1     ][ g2     ][ g3 - 1 ] < TolHd ) && ( PFdX2[ g1     ][ g2     ][ g3 - 1 ] < TolHd ) && ( PFdX3[ g1     ][ g2     ][ g3 - 1 ] < TolHd ) ;
-                    b6 = ( PFdX1[ g1     ][ g2     ][ g3 + 1 ] < TolHd ) && ( PFdX2[ g1     ][ g2     ][ g3 + 1 ] < TolHd ) && ( PFdX3[ g1     ][ g2     ][ g3 + 1 ] < TolHd ) ;
+                    b1 = ( PFdX1[g1-1][g2][g3] < TolHd ) && ( PFdX2[g1-1][g2][g3] < TolHd ) && ( PFdX3[g1-1][g2][g3] < TolHd ) ;
+                    b2 = ( PFdX1[g1+1][g2][g3] < TolHd ) && ( PFdX2[g1+1][g2][g3] < TolHd ) && ( PFdX3[g1+1][g2][g3] < TolHd ) ;
+                    b3 = ( PFdX1[g1][g2-1][g3] < TolHd ) && ( PFdX2[g1][g2-1][g3] < TolHd ) && ( PFdX3[g1][g2-1][g3] < TolHd ) ;
+                    b4 = ( PFdX1[g1][g2+1][g3] < TolHd ) && ( PFdX2[g1][g2+1][g3] < TolHd ) && ( PFdX3[g1][g2+1][g3] < TolHd ) ;
+                    b5 = ( PFdX1[g1][g2][g3-1] < TolHd ) && ( PFdX2[g1][g2][g3-1] < TolHd ) && ( PFdX3[g1][g2][g3-1] < TolHd ) ;
+                    b6 = ( PFdX1[g1][g2][g3+1] < TolHd ) && ( PFdX2[g1][g2][g3+1] < TolHd ) && ( PFdX3[g1][g2][g3+1] < TolHd ) ;
              
                     if ( b1 || b2 || b3 || b4 || b5 || b6 ) {
 
@@ -1470,13 +1873,13 @@ void Scatter3d::Evolve()
             }
             tmpVec.swap(TB);
             tmpVec.clear();
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-3 TB) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
+        
             // TA expansion
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for reduction(merge: tmpVec) private(g1, g2, g3)                 
             for (int i = 0; i < TA.size(); i++)
             {
@@ -1484,72 +1887,91 @@ void Scatter3d::Evolve()
                 g2 = (TA[i] % M1) / M2;
                 g1 = TA[i] / M1;
 
-                if (g1 + 1 != BoxShape[0] - 1)
-                    tmpVec.push_back(GridToIdx(g1 + 1, g2, g3 ));
-
-                if (g1 - 1 != 0)
-                    tmpVec.push_back(GridToIdx(g1 - 1, g2, g3 ));
-
-                if (g2 + 1 != BoxShape[1] - 1)
-                    tmpVec.push_back(GridToIdx(g1, g2 + 1, g3 ));
-
-                if (g2 - 1 != 0)
-                    tmpVec.push_back(GridToIdx(g1, g2 - 1, g3 ));
-
-                if (g3 + 1 != BoxShape[2] - 1)
+                if (g1 + 1 != BoxShape[0] - 1 && TAMask[g1+1][g2][g3] == 0)  {
+                    tmpVec.push_back(GridToIdx(g1+1,g2,g3));
+                }
+                if (g1 - 1 != 0 && TAMask[g1-1][g2][g3] == 0)  {
+                    tmpVec.push_back(GridToIdx(g1-1,g2,g3));
+                }
+                if (g2 + 1 != BoxShape[1] - 1 && TAMask[g1][g2+1][g3] == 0)  {
+                    tmpVec.push_back(GridToIdx(g1,g2+1,g3));
+                }
+                if (g2 - 1 != 0 && TAMask[g1][g2-1][g3] == 0)  {
+                    tmpVec.push_back(GridToIdx(g1,g2-1,g3));
+                }
+                if (g3 + 1 != BoxShape[2] - 1 && TAMask[g1][g2][g3+1] == 0)  {
                     tmpVec.push_back(GridToIdx(g1, g2, g3 + 1 ));
-
-                if (g3 - 1 != 0)
+                }
+                if (g3 - 1 != 0 && TAMask[g1][g2][g3-1] == 0)  {
                     tmpVec.push_back(GridToIdx(g1, g2, g3 - 1 )); 
+                }
             }
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
             if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-1 push_back) = %lf sec\n", t_1_elapsed);
+            
+            // Find unique elements
             t_1_begin = omp_get_wtime();
-
+            __gnu_parallel::sort(tmpVec.begin(),tmpVec.end());
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
+            
+            t_1_begin = omp_get_wtime();
+            it = std::unique (tmpVec.begin(), tmpVec.end()); 
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
+            
+            t_1_begin = omp_get_wtime();
+            tmpVec.resize(std::distance(tmpVec.begin(),it));
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
+            
             // Combine TA and tmpVec
+            t_1_begin = omp_get_wtime();
             TA.reserve(TA.size() + tmpVec.size());
             TA.insert(TA.end(), tmpVec.begin(), tmpVec.end());
-            tmpVec.clear();
-
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2 combine) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            // Find unique elements
-            __gnu_parallel::sort(TA.begin(),TA.end());
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-1 sort) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            it = std::unique (TA.begin(), TA.end()); 
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-2 unique) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
-
-            TA.resize(std::distance(TA.begin(),it));
-
-            t_1_end = omp_get_wtime();
-            t_1_elapsed = t_1_end - t_1_begin;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-3 resize) = %lf sec\n", t_1_elapsed);
-            t_1_begin = omp_get_wtime();
+            t_overhead += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-4 combine) = %lf sec\n", t_1_elapsed);
             
+            // Update TA Mask
+            t_1_begin = omp_get_wtime();
+            #pragma omp parallel for private(g1, g2, g3)
+            for (int i = 0; i < tmpVec.size(); i++)
+            {
+                g3 = tmpVec[i] % M2;
+                g2 = (tmpVec[i] % M1) / M2;
+                g1 = tmpVec[i] / M1;
+                TAMask[g1][g2][g3] = 1;
+            }      
+            tmpVec.clear();
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-5 update mask) = %lf sec\n", t_1_elapsed);
+            
+            t_1_begin = omp_get_wtime();
             #pragma omp parallel for
             for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
-
                 for (int i2 = 1; i2 < BoxShape[1]  - 1; i2 ++)  {
-
                     for (int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
 
                         PF[i1][i2][i3] = std::abs( F[i1][i2][i3] * std::conj(F[i1][i2][i3]) );
                     }
                 }
             }
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            t_overhead += t_1_elapsed;
+            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3-4-2-6 PF) = %lf sec\n", t_1_elapsed);
         }
 
         if ( (tt + 1) % PERIOD == 0 )
@@ -1577,16 +1999,16 @@ void Scatter3d::Evolve()
                 PF_trans.push_back(pftrans);
                 log->log("[Scatter3d] Time %lf, Trans = %e\n", ( tt + 1 ) * kk, pftrans);
                 t_1_end = omp_get_wtime();
-                t_1_elapsed = t_1_end - t_1_begin;
-                if (!QUIET && TIMING) log->log("Elapsed time (omp-e-2 trans) = %lf sec\n", t_1_elapsed); 
+                t_1_elapsed = t_1_end - t_1_begin; 
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-x-2 trans) = %lf sec\n", t_1_elapsed); 
             }
-
             // ----------------------------------------------------------------------------
             // Compute auto-correlation function
             // ----------------------------------------------------------------------------
 
             if (isAcf)  {
-            
+
+                t_1_begin = omp_get_wtime();
                 norm = 0.0;
 
                 #pragma omp parallel for reduction (+:norm)
@@ -1597,29 +2019,104 @@ void Scatter3d::Evolve()
                         }
                     }
                 }
-                norm *= H[0] * H[1] * H[2];
+                norm_re = norm * H[0] * H[1] * H[2];
+                norm = 0.0;
 
-                log->log("[Scatter3d] Step: %d, Time = %f ACF = %.16e \n", tt + 1, kk * (tt + 1), norm);
+                #pragma omp parallel for reduction (+:norm)
+                for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+                    for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+                        for (int i3 = 0; i3 < BoxShape[2]; i3 ++)  {
+                            norm += std::imag(F0_STAR[i1][i2][i3] * FF[i1][i2][i3]);
+                        }
+                    }
+                }
+                norm_im = norm * H[0] * H[1] * H[2];
+                acf = {norm_re, norm_im};
+                ACFunc.push_back(acf);
+
+                log->log("[Scatter3d] Step: %d, Time = %f ACF(Re) = %.16e \n", tt + 1, kk * (tt + 1), norm_re);
                 t_1_end = omp_get_wtime();
                 t_1_elapsed = t_1_end - t_1_begin;
-                if (!QUIET && TIMING) log->log("Elapsed time (omp-e-3 acf) = %lf sec\n", t_1_elapsed); 
+                if (!QUIET && TIMING) log->log("Elapsed time (omp-x-3 trans) = %lf sec\n", t_1_elapsed); 
             }
-            // ----------------------------------------------------------------------------
-             
+        }
+
+        // Reset
+
+        t_1_begin = omp_get_wtime();
+
+        #pragma omp parallel for
+        for (int i1 = 1; i1 < BoxShape[0] - 1 ; i1 ++)  {
+            for (int i2 = 1; i2 < BoxShape[1] - 1 ; i2 ++)  {
+                for (int i3 = 1; i3 < BoxShape[2] - 1 ; i3 ++)  {
+          
+                    FF[i1][i2][i3] = xZERO;
+                    KK1[i1][i2][i3] = xZERO;
+                    KK2[i1][i2][i3] = xZERO;
+                    KK3[i1][i2][i3] = xZERO;
+                    KK4[i1][i2][i3] = xZERO;
+                }
+            }
+        }
+        t_1_end = omp_get_wtime();
+        t_1_elapsed = t_1_end - t_1_begin;
+        t_full += t_1_elapsed;
+        t_truncate += t_1_elapsed;
+        if (!QUIET && TIMING) log->log("Elapsed time (omp-e-4: reset) = %lf sec\n", t_1_elapsed);
+
+        if ( (tt + 1) % SORT_PERIOD == 0 && !isFullGrid )
+        {
+            t_1_begin = omp_get_wtime();
+            __gnu_parallel::sort (TA.begin(), TA.end());
+            t_1_end = omp_get_wtime();
+            t_1_elapsed = t_1_end - t_1_begin;
+            t_truncate += t_1_elapsed;
+            if ( !QUIET && TIMING ) log->log("Elapsed time (omp-e-5: sort) = %lf sec\n", t_1_elapsed);
+        }
+
+        if ( (tt + 1) % PERIOD == 0 )
+        {          
             t_0_end = omp_get_wtime();
-            t_0_elapsed = t_0_end - t_0_begin;
+            t_0_elapsed = t_0_end - t_0_begin;  
  
-            if (!QUIET) log->log("[Scatter3d] Step: %d, Elapsed time: %lf sec\n", tt + 1, t_0_elapsed);
+            if ( !QUIET ) log->log("[Scatter3d] Step: %d, Elapsed time: %lf sec\n", tt + 1, t_0_elapsed);
 
-            if (!isFullGrid && !QUIET) {
+            if ( !isFullGrid && !QUIET )  {
 
+                log->log("[Scatter3d] Core computation time = %lf\n", t_truncate);
+                log->log("[Scatter3d] Overhead time = %lf\n", t_overhead);
                 log->log("[Scatter3d] TA size = %d, TB size = %d\n", TA.size(), TB.size());
                 log->log("[Scatter3d] TA / total grids = %lf\n", ( TA.size() * 1.0 ) / GRIDS_TOT);
             }
-            log->log("\n........................................................\n\n");
-        }           
+            else if ( isFullGrid && !QUIET )  {
 
+                log->log("[Scatter3d] Core computation time = %lf\n", t_full);
+            }
+            log->log("\n........................................................\n\n");
+        }          
     } // Time iteration 
+
+    // Compute spectrum from ACFunc
+    if ( isAcf )
+    {
+        t_1_begin = omp_get_wtime();
+
+        norm = 0.0;
+
+        for ( int i = 0; i < int(kMax / dk) + 1; i ++)  {
+            for ( int j = 0; j < ACFunc.size(); j ++)  {
+
+                norm += ACFunc[j][0] * cos(i * dk * j * PERIOD * kk) - ACFunc[j][1] * sin(i * dk * j * PERIOD * kk) * exp(-pow(j * PERIOD * kk / TIME, 2));
+            }
+            norm *= i * dk / PI * (PERIOD * kk);
+            Spectrum.push_back(norm);
+            log->log("[Scatter3d] k = %f Spectrum = %.16e \n", i * dk, norm);
+        }
+
+        t_1_end = omp_get_wtime();
+        t_1_elapsed = t_1_end - t_1_begin;
+        if (!QUIET && TIMING) log->log("Elapsed time (omp-x-3 spectrum) = %lf sec\n", t_1_elapsed);
+    }
 
     log->log("[Scatter3d] Evolve done.\n");
 }
@@ -1630,13 +2127,13 @@ void Scatter3d::Evolve()
 
 inline std::complex<double> Scatter3d::Wavefunction_EckMO(double x1, double x2, double x3)
 {
-    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0)));
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * x1 - Da * (Ld - 0.5) * ((x2 - r0) + (x3 - r0)) - Ld * (exp(- Da * (x2 - r0)) + exp(- Da * (x3 - r0))) );
 }
 /* ------------------------------------------------------------------------------- */
 
 inline double Scatter3d::Potential_EckMO(double x1, double x2, double x3)
 {
-    return V0 * pow(cosh(alpha * x1), -2.0) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De;
+    return V0 * pow(cosh(alpha * x1), -2.0) + (1.0 - sigma * exp(- lambda * x1 * x1)) * De * ( pow(1.0 - exp( - Da * x2 ), 2.0) + pow(1.0 - exp( - Da * x3 ), 2.0) );
 }
 /* ------------------------------------------------------------------------------- */
 
@@ -1645,13 +2142,13 @@ inline double Scatter3d::Potential_EckMO(double x1, double x2, double x3)
 
 inline std::complex<double> Scatter3d::Wavefunction_GauMO(double x1, double x2, double x3)
 {
-    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x2 - r0)) - Ld * exp(-Da * (x2 - r0))) * exp( (Ld - 0.5) * (std::log(2 * Ld) - Da * (x3 - r0)) - Ld * exp(-Da * (x3 - r0)));
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * x1 - Da * (Ld - 0.5) * ((x2 - r0) + (x3 - r0)) - Ld * (exp(- Da * (x2 - r0)) + exp(- Da * (x3 - r0))) );
 }
 /* ------------------------------------------------------------------------------- */
 
 inline double Scatter3d::Potential_GauMO(double x1, double x2, double x3)
 {
-    return V0 * exp(-beta * x1 * x1) + De * pow(1.0 - exp( - Da * ( x2 - r0 )), 2.0) - De + De * pow(1.0 - exp( - Da * ( x3 - r0 )), 2.0) - De;
+    return V0 * exp(-beta * x1 * x1) + (1.0 - sigma * exp(- lambda * x1 * x1)) * De * ( pow(1.0 - exp( - Da * x2 ), 2.0) + pow(1.0 - exp( - Da * x3 ), 2.0) );
 }
 /* ------------------------------------------------------------------------------- */
 
@@ -1660,7 +2157,7 @@ inline double Scatter3d::Potential_GauMO(double x1, double x2, double x3)
 
 inline std::complex<double> Scatter3d::Wavefunction_EckHO(double x1, double x2, double x3)
 {
-    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp(-A[1] * pow(x2 - Wave0[1], 2)) * exp(-A[2] * pow(x3 - Wave0[2], 2));
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * x1 - A[1] * pow(x2, 2) - A[2] * pow(x3,2) );
 }
 /* ------------------------------------------------------------------------------- */
 
@@ -1675,7 +2172,7 @@ inline double Scatter3d::Potential_EckHO(double x1, double x2, double x3)
 
 inline std::complex<double> Scatter3d::Wavefunction_GauHO(double x1, double x2, double x3)
 {
-    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * (x1 - Wave0[0])) * exp(-A[1] * pow(x2 - Wave0[1], 2)) * exp(-A[2] * pow(x3 - Wave0[2], 2));
+    return exp( -A[0] * pow(x1 - Wave0[0], 2) + I / hb * P[0] * x1 - A[1] * pow(x2, 2) - A[2] * pow(x3,2));
 }
 /* ------------------------------------------------------------------------------- */
 

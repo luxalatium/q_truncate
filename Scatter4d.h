@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 9/9/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 12/26/18
+//  Last modified on 1/22/19
 //
 //  Note:
 //
@@ -56,7 +56,8 @@ namespace QTR_NS {
         std::complex<double>  I;      // sqrt(-1)
         std::complex<double>  xZERO;  // complex zero
         int                   DIMENSIONS;
-        int                   PERIOD; 
+        int                   PERIOD;
+        int                   SORT_PERIOD; 
         int                   GRIDS_TOT;
         bool                  QUIET;
         bool                  TIMING;
@@ -88,16 +89,14 @@ namespace QTR_NS {
         double          ek2v;
         double          alpha;    
         double          Ek0;      
-        double          k0;   // Related HO
-        double          sig;        
-        double          lan;         
         double          De;   // Morse
         double          Da;
         double          r0;
         double          Ld;
         double          lambda; // HH
-        double          sigma;  // EckHO
-        double          beta;   // GauHO
+        double          k0;     // HO  
+        double          sigma;
+        double          beta;   // Gaussian
 
         // Wavefunction
         VectorXd        Wave0;
@@ -127,6 +126,10 @@ namespace QTR_NS {
         // Output
         bool            isTrans;
         bool            isAcf;
+
+        // Spectrum
+        double          dk;
+        double          kMax;
     };
 }
 

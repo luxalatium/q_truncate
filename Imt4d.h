@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 10/3/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 12/23/18
+//  Last modified on 10/30/18
 //
 //  Note:
 //
@@ -50,9 +50,8 @@ namespace QTR_NS {
         std::complex<double>  xZERO;  // complex zero
         int                   DIMENSIONS;
         int                   PERIOD; 
-        int                   GRIDS_TOT;
-        bool                  QUIET;
-        bool                  TIMING;   
+    int                   GRIDS_TOT;
+        bool                  QUIET;   
         double                TIME;   
 
         // Grid size

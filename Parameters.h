@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 8/4/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 12/26/18
+//  Last modified on 1/22/19
 //
 //  Note:
 //
@@ -64,6 +64,7 @@ namespace QTR_NS   {
         int      scxd_Vmode_3; 
         int      scxd_Vmode_4;    
         int      scxd_period;
+        int      scxd_sortperiod;
         double     scxd_k;
         double     scxd_h1;
         double     scxd_h2;
@@ -110,6 +111,8 @@ namespace QTR_NS   {
         double     scxd_lambda; // Henon-Heiles
         double     scxd_sigma;  // Scek
         double     scxd_beta;   // Gauk
+        double     scxd_dk;     // Spectrum
+        double     scxd_kmax;   // Spectrum
         
         // RANDOM //
         string     rngType;

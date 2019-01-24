@@ -25,6 +25,9 @@ typedef boost::multi_array<std::complex<double>, 3> MeshCX3D;
 typedef boost::multi_array<double, 3> MeshD3D;
 typedef boost::multi_array<std::complex<double>, 4> MeshCX4D;
 typedef boost::multi_array<double, 4> MeshD4D;
+typedef boost::multi_array<bool, 2> Mask2D;
+typedef boost::multi_array<bool, 3> Mask3D;
+typedef boost::multi_array<bool, 4> Mask4D;
 typedef std::vector<int> MeshIndex;
 //typedef std::vector<std::vector<int>> MeshGrid;
 
