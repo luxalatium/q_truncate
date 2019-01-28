@@ -6,7 +6,7 @@
 //  Created by Albert Lu on 8/4/18.
 //  alu@tacc.utexas.edu
 //
-//  Last modified on 1/22/19
+//  Last modified on 1/27/19
 //
 //  Note:
 //
@@ -104,10 +104,13 @@ int Parameters::load(FILE *file){
         // SCATTERXD //
         scxd_isFullGrid = ini.GetValueB("SCATTERXD", "isFullGrid", 1);  
         scxd_isTrans    = ini.GetValueB("SCATTERXD", "isTrans", 1);
-        scxd_isAcf      = ini.GetValueB("SCATTERXD", "isAcf", 1);;
+        scxd_isAcf      = ini.GetValueB("SCATTERXD", "isAcf", 1);
+        scxd_isPrintEdge = ini.GetValueB("SCATTERXD", "isPrintEdge", 0);
+        scxd_isPrintDensity = ini.GetValueB("SCATTERXD", "isPrintDensity", 0);
         scxd_dimensions = ini.GetValueI("SCATTERXD", "dimensions", 3);  
         scxd_period = ini.GetValueI("SCATTERXD", "period", 100);
         scxd_sortperiod = ini.GetValueI("SCATTERXD", "sortperiod", 100);
+        scxd_printperiod = ini.GetValueI("SCATTERXD", "printperiod", 100);
         scxd_k      = ini.GetValueF("SCATTERXD", "k", 0.001);
         scxd_h1     = ini.GetValueF("SCATTERXD", "h1", 0.1);
         scxd_h2     = ini.GetValueF("SCATTERXD", "h2", 0.1);

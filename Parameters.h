@@ -59,12 +59,15 @@ namespace QTR_NS   {
         bool     scxd_isFullGrid;
         bool     scxd_isTrans;
         bool     scxd_isAcf;
+        bool     scxd_isPrintEdge;
+        bool     scxd_isPrintDensity;
         int      scxd_Vmode_1;
         int      scxd_Vmode_2;
         int      scxd_Vmode_3; 
         int      scxd_Vmode_4;    
         int      scxd_period;
         int      scxd_sortperiod;
+        int      scxd_printperiod;
         double     scxd_k;
         double     scxd_h1;
         double     scxd_h2;

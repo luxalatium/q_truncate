@@ -59,6 +59,7 @@ namespace QTR_NS {
         int                   DIMENSIONS;
         int                   PERIOD;
         int                   SORT_PERIOD; 
+        int                   PRINT_PERIOD;
         int                   GRIDS_TOT;
         bool                  QUIET;
         bool                  TIMING;
@@ -128,6 +129,8 @@ namespace QTR_NS {
         // Output
         bool            isTrans;
         bool            isAcf;
+        bool            isPrintEdge;
+        bool            isPrintDensity;
 
         // Spectrum
         double          dk;

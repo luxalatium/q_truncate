@@ -9,3 +9,5 @@ make QTRMPI=1 POT_GAUMO=1
 make clean-all
 make QTRMPI=1 POT_GAUHO=1
 make clean-all
+make QTRMPI=1
+mv qtr_mpi qtr_mpi_hh

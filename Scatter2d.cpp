@@ -102,11 +102,15 @@ void Scatter2d::init()
     xZERO = {0,0}; // complex zero
     DIMENSIONS = parameters->scxd_dimensions;
     PERIOD = parameters->scxd_period;
+    SORT_PERIOD = parameters->scxd_sortperiod;
+    PRINT_PERIOD = parameters->scxd_printperiod;
     TIME = parameters->scxd_Tf;
     QUIET = parameters->quiet;
     TIMING = parameters->timing;
     isTrans = parameters->scxd_isTrans;
     isAcf = parameters->scxd_isAcf;
+    isPrintEdge = parameters->scxd_isPrintEdge;
+    isPrintDensity = parameters->scxd_isPrintDensity;
 
     // Grid size
     H.resize(DIMENSIONS);
@@ -225,6 +229,9 @@ void Scatter2d::Evolve()
 
     log->log("[Scatter2d] Evolve starts ...\n");
 
+    // Files
+    FILE *pfile;
+
     // Variables 
     int index;
     int n1, n2;
@@ -289,7 +296,7 @@ void Scatter2d::Evolve()
     // Auto-correlation
     vector<vector<double>> ACFunc;
     vector<double> acf(2);
-    acf = {0.0, 0.0};
+    acf = {1.0, 0.0};
     ACFunc.push_back(acf);
 
     // Spectrum
@@ -640,6 +647,40 @@ void Scatter2d::Evolve()
     for (int tt = 0; tt < (int)(TIME / kk); tt ++)
     {
         t_0_begin = omp_get_wtime(); 
+
+        if ( tt % PRINT_PERIOD == 0 )
+        {
+            if ( isPrintEdge  && !isFullGrid )  {
+
+                pfile = fopen ("edge.dat","a");
+                fprintf(pfile, "%d %lf %lu\n", tt, tt * kk, TB.size());
+
+                for (int i = 0; i < TB.size(); i++)
+                {
+                    g2 = TB[i] % M1;
+                    g1 = TB[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    fprintf(pfile, "%d %d %lf %lf\n", g1, g2, xx1, xx2);          
+                }
+                fclose(pfile);
+            }
+            if ( isPrintDensity && !isFullGrid )  {
+
+                pfile = fopen ("density.dat","a");
+                fprintf(pfile, "%d %lf %lu\n", tt, tt * kk, TA.size());
+
+                for (int i = 0; i < TA.size(); i++)
+                {
+                    g2 = TA[i] % M1;
+                    g1 = TA[i] / M1;
+                    xx1 = Box[0] + g1 * H[0];
+                    xx2 = Box[2] + g2 * H[1];
+                    fprintf(pfile, "%d %d %lf %lf %.16e\n", g1, g2, xx1, xx2, PF[g1][g2]);          
+                }
+                fclose(pfile);
+            }
+        }
 
         // Check if TB of f is higher than TolL
         
@@ -1807,10 +1848,10 @@ void Scatter2d::Evolve()
                 acf = {norm_re, norm_im};
                 ACFunc.push_back(acf);
 
-                log->log("[Scatter2d] Step: %d, Time = %f ACF(Re) = %.16e \n", tt + 1, kk * (tt + 1), norm_re);
+                //log->log("[Scatter2d] Step: %d, Time = %f ACF(Re) = %.16e \n", tt + 1, kk * (tt + 1), norm_re);
                 t_1_end = omp_get_wtime();
                 t_1_elapsed = t_1_end - t_1_begin;
-                if (!QUIET && TIMING) log->log("Elapsed time (omp-x-3 trans) = %lf sec\n", t_1_elapsed); 
+                if ( !QUIET && TIMING ) log->log("Elapsed time (omp-x-3 trans) = %lf sec\n", t_1_elapsed); 
              }
         }
 
@@ -1833,7 +1874,7 @@ void Scatter2d::Evolve()
         t_1_elapsed = t_1_end - t_1_begin;
         t_full += t_1_elapsed;
         t_truncate += t_1_elapsed;
-        if (!QUIET && TIMING) log->log("Elapsed time (omp-e-4: reset) = %lf sec\n", t_1_elapsed);  
+        if ( !QUIET && TIMING ) log->log("Elapsed time (omp-e-4: reset) = %lf sec\n", t_1_elapsed);  
 
         if ( (tt + 1) % SORT_PERIOD == 0 && !isFullGrid )
         {
@@ -1842,7 +1883,7 @@ void Scatter2d::Evolve()
             t_1_end = omp_get_wtime();
             t_1_elapsed = t_1_end - t_1_begin;
             t_truncate += t_1_elapsed;
-            if (!QUIET && TIMING) log->log("Elapsed time (omp-e-5: sort) = %lf sec\n", t_1_elapsed);
+            if ( !QUIET && TIMING ) log->log("Elapsed time (omp-e-5: sort) = %lf sec\n", t_1_elapsed);
         }
 
         if ( (tt + 1) % PERIOD == 0 )
@@ -1863,13 +1904,24 @@ void Scatter2d::Evolve()
 
                 log->log("[Scatter2d] Core computation time = %lf\n", t_full);
             }
-            log->log("\n........................................................\n\n");
+            if ( !QUIET ) log->log("\n........................................................\n\n");
         }         
     } // Time iteration 
+
+    // ACF
+    if ( isAcf )
+    {
+         for ( int i = 0; i < ACFunc.size(); i ++ )
+         {
+             log->log("[Scatter2d] Time = %f ACF = ( %.16e , %.16e ) \n", i * PERIOD * kk, ACFunc[i][0], ACFunc[i][1]);
+         }
+    }
 
     // Compute spectrum from ACFunc
     if ( isAcf )
     {
+        double tau_window = 15.0;
+
         t_1_begin = omp_get_wtime();
 
         norm = 0.0;
@@ -1877,7 +1929,7 @@ void Scatter2d::Evolve()
         for ( int i = 0; i < int(kMax / dk) + 1; i ++)  {
             for ( int j = 0; j < ACFunc.size(); j ++)  {
 
-                norm += ACFunc[j][0] * cos(i * dk * j * PERIOD * kk) - ACFunc[j][1] * sin(i * dk * j * PERIOD * kk) * exp(-pow(j * PERIOD * kk / TIME, 2));
+                norm += ACFunc[j][0] * cos(i * dk * j * PERIOD * kk) - ACFunc[j][1] * sin(i * dk * j * PERIOD * kk) * exp(-pow(j * PERIOD * kk / tau_window, 2));
             }
             norm *= i * dk / PI * (PERIOD * kk);
             Spectrum.push_back(norm);
