@@ -517,11 +517,16 @@ void Scatter2d::Evolve()
                 b3 = PFdX2[i1][i2] < TolHd;
         
                 if ( b1 && b2 && b3 )
+                {
                     F[i1][i2] = xZERO;
-            }
-        }
-        // `````````````````````````````````````````````````````````````````
-        
+                } 
+                else if (PF[i1][i2] <  TolH)
+                {
+                    log->log("%d %d %d %d %d %e %e %e %d \n", i1,i2,b1,b2,b3, PF[i1][i2], PFdX1[i1][i2], PFdX2[i1][i2], F[i1][i2] != xZERO );
+
+                }
+           }
+        }   
         // TA 
         #pragma omp parallel for reduction(merge: tmpVec) private(b1, b2, b3)
         for (int i1 = 1; i1 < BoxShape[0] - 1; i1 ++)  {
@@ -533,6 +538,7 @@ void Scatter2d::Evolve()
             
                 if ( b1 || ( b2 || b3 ))  {
 
+                    log->log("%d %d %d %d %d %e %e %e\n",i1,i2, b1,b2,b3,PF[i1][i2], PFdX1[i1][i2], PFdX2[i1][i2] );
                     tmpVec.push_back(GridToIdx(i1,i2));   
                     TAMask[i1][i2] = 1;                                
                 }
@@ -679,6 +685,23 @@ void Scatter2d::Evolve()
                     fprintf(pfile, "%d %d %lf %lf %.16e\n", g1, g2, xx1, xx2, PF[g1][g2]);          
                 }
                 fclose(pfile);
+            }
+            if ( isPrintDensity && isFullGrid )  {
+
+                pfile = fopen ("density.dat","a");
+                fprintf(pfile, "%d %lf %d\n", tt, tt * kk, BoxShape[0] * BoxShape[1] );
+
+                for (int i1 = 0; i1 < BoxShape[0]; i1 ++)  {
+                    for (int i2 = 0; i2 < BoxShape[1]; i2 ++)  {
+
+                        g1 = i1;
+                        g2 = i2;
+                        xx1 = Box[0] + g1 * H[0];
+                        xx2 = Box[2] + g2 * H[1];
+                        fprintf(pfile, "%d %d %lf %lf %.16e\n", g1, g2, xx1, xx2, PF[g1][g2]);
+                    }
+                }
+                fclose(pfile);      
             }
         }
 
@@ -1598,6 +1621,7 @@ void Scatter2d::Evolve()
                 }
             }
         }
+        log->log("norm = %lf\n", norm);
         norm *= H[0] * H[1];
         norm = 1.0 / sqrt(norm);
 

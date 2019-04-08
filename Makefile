@@ -34,6 +34,34 @@ endif
 
 #-----------------------------------------------------------
 
+#POT settings
+
+ifdef POT_ECKMO
+        CXXFLAGS += -DPOT_ECKMO
+        TARGET_NAME=qtr_mpi_eckmo
+endif
+
+ifdef POT_ECKHO
+        CXXFLAGS += -DPOT_ECKHO
+        TARGET_NAME=qtr_mpi_eckho
+endif
+
+ifdef POT_GAUMO
+        CXXFLAGS += -DPOT_GAUMO
+        TARGET_NAME=qtr_mpi_gaumo
+endif
+
+ifdef POT_GAUHO
+        CXXFLAGS += -DPOT_GAUHO
+        TARGET_NAME=qtr_mpi_gauho
+endif
+
+ifdef POT_HH
+        CXXFLAGS += -DPOT_HH
+        TARGET_NAME=qtr_mpi_hh
+endif
+#-----------------------------------------------------------
+
 #Ensures all code is statically linked on a Linux machine
 
 UNAME := $(shell uname)
